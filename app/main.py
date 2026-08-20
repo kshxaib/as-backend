@@ -19,16 +19,7 @@ app = FastAPI(
 )
 
 
-# ---------------------------------------------------------
-# CORS
-# ---------------------------------------------------------
-# React will run on localhost:5173 during development.
-#
-# Without CORS, the browser will block requests from:
-# React (5173) → FastAPI (8000)
-#
-# We configure this now so the frontend can be connected
-# later without changing the backend architecture.
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -41,30 +32,17 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------
-# Basic application health
-# ---------------------------------------------------------
+
 @app.get("/api/health")
 def health_check():
-    """
-    Check whether the FastAPI application itself is running.
-    """
-
     return {
         "status": "ok",
         "service": os.getenv("APP_NAME", "AcademicStack"),
     }
 
 
-# ---------------------------------------------------------
-# PostgreSQL health
-# ---------------------------------------------------------
 @app.get("/api/health/db")
 def database_health_check():
-    """
-    Check whether FastAPI can communicate with PostgreSQL.
-    """
-
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -82,15 +60,8 @@ def database_health_check():
         }
 
 
-# ---------------------------------------------------------
-# Qdrant health
-# ---------------------------------------------------------
 @app.get("/api/health/qdrant")
 def qdrant_health_check():
-    """
-    Check whether FastAPI can communicate with Qdrant.
-    """
-
     is_connected = check_qdrant_connection()
 
     if is_connected:

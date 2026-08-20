@@ -1,13 +1,5 @@
 from app.db.database import Base, engine
-
+from app.db.models import User
 
 def init_db():
-    """
-    Initialize database tables.
-
-    Currently there are no application models.
-    As we add models in later phases, SQLAlchemy will create
-    their corresponding tables here.
-    """
-
     Base.metadata.create_all(bind=engine)
