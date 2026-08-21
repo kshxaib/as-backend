@@ -87,27 +87,11 @@ def get_resource_endpoint( resource_id: int, db: Session = Depends(get_db),):
     return resource
 
 
-@router.delete(
-    "/{resource_id}",
-)
-def delete_resource_endpoint(
-    resource_id: int,
-    db: Session = Depends(get_db),
-):
-    """
-    Delete a resource.
+# Delete a resource.
+@router.delete("/{resource_id}")
+def delete_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
 
-    Phase 2:
-        Cloudinary + PostgreSQL
-
-    Phase 3:
-        Cloudinary + PostgreSQL + Qdrant
-    """
-
-    resource = get_resource(
-        db=db,
-        resource_id=resource_id,
-    )
+    resource = get_resource(db=db, resource_id=resource_id)
 
     if resource is None:
         raise HTTPException(
@@ -115,10 +99,7 @@ def delete_resource_endpoint(
             detail="Resource not found",
         )
 
-    delete_resource(
-        db=db,
-        resource=resource,
-    )
+    delete_resource(db=db,resource=resource)
 
     return {
         "message": "Resource deleted successfully",
