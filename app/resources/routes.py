@@ -60,25 +60,11 @@ def create_resource_endpoint(
 
 
 
-@router.get(
-    "",
-    response_model=ResourceListResponse,
-)
-def list_resources_endpoint(
-    user_id: int | None = None,
-    db: Session = Depends(get_db),
-):
-    """
-    Retrieve resources.
-
-    Optional user_id can filter resources belonging to
-    a specific user.
-    """
-
-    resources = get_resources(
-        db=db,
-        user_id=user_id,
-    )
+# Fetch all resources.
+@router.get("", response_model=ResourceListResponse)
+def list_resources_endpoint(user_id: int | None = None, db: Session = Depends(get_db)):
+    
+    resources = get_resources(db=db, user_id=user_id)
 
     return {
         "resources": resources,
