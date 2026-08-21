@@ -15,10 +15,7 @@ from app.utils.encryption import decrypt_api_key
 # Download a resource PDF from Cloudinary.
 def download_pdf(url: str, destination: str) -> None:
 
-    response = requests.get(
-        url,
-        timeout=120,
-    )
+    response = requests.get(url, timeout=120)
 
     response.raise_for_status()
 
@@ -26,26 +23,13 @@ def download_pdf(url: str, destination: str) -> None:
         file.write(response.content)
 
 
-def load_pdf(
-    pdf_path: str,
-) -> list[Document]:
-    """
-    Load a PDF using LangChain's PyMuPDF loader.
 
-    Returns:
-        List of LangChain Document objects.
+# Load a PDF using LangChain's PyMuPDF loader.
+def load_pdf(pdf_path: str) -> list[Document]:
 
-    Each page becomes a Document containing:
-        - page_content
-        - source metadata
-        - page metadata
-    """
-
-    loader = PyMuPDFLoader(
-        pdf_path,
-    )
-
+    loader = PyMuPDFLoader(pdf_path)
     return loader.load()
+
 
 
 def split_documents(
