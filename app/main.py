@@ -11,6 +11,8 @@ from app.vector_store.qdrant import check_qdrant_connection
 from app.users.routes import router as users_router
 from app.resources.routes import router as resources_router
 from app.indexing.routes import router as indexing_router
+from app.question_banks.routes import router as question_banks_router
+from app.questions.routes import router as questions_router
 
 
 
@@ -41,6 +43,8 @@ app.add_middleware(
 app.include_router(users_router)
 app.include_router(resources_router)
 app.include_router(indexing_router)
+app.include_router(question_banks_router)
+app.include_router(questions_router)
 
 
 @app.get("/api/health")
