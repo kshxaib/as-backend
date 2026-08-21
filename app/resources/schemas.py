@@ -11,7 +11,7 @@ class ResourceResponse(BaseModel):
     chapters: str | None
     description: str | None
     cloudinary_url: str
-    visibility: str
+    visibility: Literal["private", "community"]
     status: str
     created_at: datetime
 

@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy.orm import Session
 
 from app.db.models import Resource
@@ -15,7 +16,8 @@ def create_resource(
         .replace(" ", "_")
     )
 
-    public_id = f"user_{user_id}_{safe_name}"
+    unique_id = uuid.uuid4().hex[:12]
+    public_id = f"user_{user_id}_{safe_name}_{unique_id}"
 
     upload_result = upload_pdf(
         file=file,
