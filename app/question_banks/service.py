@@ -158,6 +158,21 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
             os.remove(temporary_pdf_path)
 
 
+# Fetch multiple question banks (optionally filtered by user_id).
+def get_question_banks(db: Session, user_id: int | None = None) -> list[QuestionBank]:
+
+    query = db.query(QuestionBank)
+
+    if user_id is not None:
+        query = query.filter(QuestionBank.user_id == user_id)
+
+    return (
+        query
+        .order_by(QuestionBank.created_at.desc())
+        .all()
+    )
+
+
 # Fetch a single question bank.
 def get_question_bank(db: Session, question_bank_id: int) -> QuestionBank | None:
 
@@ -177,3 +192,37 @@ def get_questions(db: Session, question_bank_id: int) -> list[Question]:
         .order_by(Question.question_number)
         .all()
     )
+
+
+# Manually add a new question to a question bank.
+def add_question_to_bank(
+    db: Session,
+    question_bank_id: int,
+    question_text: str,
+    marks: int,
+    question_number: int | None = None,
+) -> Question:
+
+    if question_number is None:
+        last_question = (
+            db.query(Question)
+            .filter(Question.question_bank_id == question_bank_id)
+            .order_by(Question.question_number.desc())
+            .first()
+        )
+        question_number = (last_question.question_number + 1) if last_question else 1
+
+    question = Question(
+        question_bank_id=question_bank_id,
+        question_number=question_number,
+        question_text=question_text,
+        marks=marks,
+        marks_source="user_modified",
+    )
+
+    db.add(question)
+    db.commit()
+    db.refresh(question)
+
+    return question
+

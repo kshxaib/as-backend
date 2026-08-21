@@ -20,6 +20,11 @@ class QuestionBankResponse(BaseModel):
     }
 
 
+class QuestionBankListResponse(BaseModel):
+    question_banks: list[QuestionBankResponse]
+
+
+
 # Representation of an extracted question.
 class QuestionResponse(BaseModel):
     id: int

@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.question_banks.schemas import QuestionBankResponse, QuestionListResponse
-from app.question_banks.service import create_question_bank, extract_questions, get_question_bank, get_questions
+from app.question_banks.schemas import QuestionBankListResponse, QuestionBankResponse, QuestionListResponse, QuestionResponse
+from app.question_banks.service import add_question_to_bank, create_question_bank, extract_questions, get_question_bank, get_question_banks, get_questions
+from app.questions.schemas import QuestionCreate
 
 
 router = APIRouter(
@@ -46,6 +47,33 @@ def create_question_bank_endpoint(
     )
 
     return question_bank
+
+
+# Fetch all question banks (optionally filtered by user_id).
+@router.get("", response_model=QuestionBankListResponse)
+def list_question_banks_endpoint(user_id: int | None = None, db: Session = Depends(get_db)):
+
+    question_banks = get_question_banks(db=db, user_id=user_id)
+
+    return {
+        "question_banks": question_banks,
+    }
+
+
+# Fetch a single question bank.
+@router.get("/{question_bank_id}", response_model=QuestionBankResponse)
+def get_question_bank_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
+
+    question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
+
+    if question_bank is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Question bank not found.",
+        )
+
+    return question_bank
+
 
 
 # Trigger LLM question extraction.
@@ -104,3 +132,31 @@ def get_questions_endpoint(question_bank_id: int, db: Session = Depends(get_db))
     return {
         "questions": questions,
     }
+
+
+# Add a manual question to a question bank.
+@router.post("/{question_bank_id}/questions", response_model=QuestionResponse)
+def add_question_endpoint(
+    question_bank_id: int,
+    question_data: QuestionCreate,
+    db: Session = Depends(get_db),
+):
+
+    question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
+
+    if question_bank is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Question bank not found.",
+        )
+
+    question = add_question_to_bank(
+        db=db,
+        question_bank_id=question_bank_id,
+        question_text=question_data.question_text,
+        marks=question_data.marks,
+        question_number=question_data.question_number,
+    )
+
+    return question
+
