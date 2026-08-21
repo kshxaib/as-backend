@@ -32,18 +32,8 @@ def load_pdf(pdf_path: str) -> list[Document]:
 
 
 
-def split_documents(
-    documents: list[Document],
-) -> list[Document]:
-    """
-    Split LangChain Documents into smaller chunks.
-
-    Uses LangChain's RecursiveCharacterTextSplitter.
-
-    Chunk configuration:
-        chunk_size = 1000 characters
-        overlap   = 200 characters
-    """
+# Split LangChain Documents into smaller chunks.
+def split_documents(documents: list[Document]) -> list[Document]:
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -51,11 +41,11 @@ def split_documents(
         length_function=len,
     )
 
-    return splitter.split_documents(
-        documents,
-    )
+    return splitter.split_documents(documents)
 
 
+
+# Add AcademicStack-specific metadata to every chunk.
 def enrich_documents(
     documents: list[Document],
     resource: Resource,
