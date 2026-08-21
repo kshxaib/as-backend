@@ -1,41 +1,35 @@
 import os
-
+from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 
-from dotenv import load_dotenv
 
 load_dotenv()
 
 
-# Qdrant client used by the application.
+QDRANT_HOST = os.getenv("QDRANT_HOST","localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT","6333"))
+
+COLLECTION_NAME = "academicstack_resources"
+
+VECTOR_SIZE = 768
+
 client = QdrantClient(
-    host=os.getenv("QDRANT_HOST", "localhost"),
-    port=int(os.getenv("QDRANT_PORT", "6333")),
+    host=QDRANT_HOST,
+    port=QDRANT_PORT,
 )
 
 
-def get_qdrant_client() -> QdrantClient:
-    """
-    Return the application's Qdrant client.
 
-    Other services should use this function instead of
-    creating their own QdrantClient instances.
-    """
+def get_qdrant_client() -> QdrantClient:
 
     return client
 
 
 def check_qdrant_connection() -> bool:
-    """
-    Check whether the application can communicate with Qdrant.
-
-    Returns:
-        True  -> Qdrant is reachable.
-        False -> Qdrant is unavailable.
-    """
-
     try:
         client.get_collections()
+
         return True
+
     except Exception:
         return False
