@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Resource
 from app.storage.cloudinary import delete_pdf, upload_pdf
+from app.vector_store.qdrant import delete_resource_vectors
 
 
 def create_resource(
@@ -69,9 +70,14 @@ def get_resources(db: Session, user_id: int | None = None) -> list[Resource]:
     )
 
 
+# Delete a resource from all storage layers.
 def delete_resource(db: Session, resource: Resource) -> None:
+    # Remove indexed vectors.
+    delete_resource_vectors(resource_id=resource.id)
 
+    # Remove actual PDF.
     delete_pdf(public_id=resource.cloudinary_public_id)
 
+    # Remove PostgreSQL metadata.
     db.delete(resource)
     db.commit()
