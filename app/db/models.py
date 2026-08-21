@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Integer, String
+from typing import Literal
 
 from app.db.database import Base
 

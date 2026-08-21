@@ -9,6 +9,7 @@ from app.db.database import engine
 from app.vector_store.qdrant import check_qdrant_connection
 
 from app.users.routes import router as users_router
+from app.resources.routes import router as resources_router
 
 
 
@@ -35,7 +36,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 app.include_router(users_router)
+app.include_router(resources_router)
+
 
 @app.get("/api/health")
 def health_check():

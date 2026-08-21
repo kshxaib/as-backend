@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, Field
+from typing import Literal
 
 # Safe representation of a stored resource.
 class ResourceResponse(BaseModel):
