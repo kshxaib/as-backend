@@ -63,7 +63,7 @@ def create_resource_endpoint(
 # Fetch all resources.
 @router.get("", response_model=ResourceListResponse)
 def list_resources_endpoint(user_id: int | None = None, db: Session = Depends(get_db)):
-    
+
     resources = get_resources(db=db, user_id=user_id)
 
     return {
@@ -71,22 +71,12 @@ def list_resources_endpoint(user_id: int | None = None, db: Session = Depends(ge
     }
 
 
-@router.get(
-    "/{resource_id}",
-    response_model=ResourceResponse,
-)
-def get_resource_endpoint(
-    resource_id: int,
-    db: Session = Depends(get_db),
-):
-    """
-    Retrieve a single resource.
-    """
 
-    resource = get_resource(
-        db=db,
-        resource_id=resource_id,
-    )
+# Fetch a single resource.
+@router.get("/{resource_id}", response_model=ResourceResponse)
+def get_resource_endpoint( resource_id: int, db: Session = Depends(get_db),):
+
+    resource = get_resource(db=db, resource_id=resource_id)
 
     if resource is None:
         raise HTTPException(
