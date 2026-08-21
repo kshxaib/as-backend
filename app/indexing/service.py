@@ -74,57 +74,20 @@ def enrich_documents(documents: list[Document], resource: Resource) -> list[Docu
     return enriched_documents
 
 
-def index_resource(
-    db: Session,
-    resource: Resource,
-) -> int:
-    """
-    Index one AcademicStack resource.
 
-    Complete pipeline:
 
-        PostgreSQL Resource
-                ↓
-        Decrypt user's Gemini API key
-                ↓
-        Download PDF from Cloudinary
-                ↓
-        LangChain PyMuPDFLoader
-                ↓
-        LangChain Documents
-                ↓
-        RecursiveCharacterTextSplitter
-                ↓
-        AcademicStack metadata
-                ↓
-        Gemini Embeddings
-                ↓
-        LangChain QdrantVectorStore
-                ↓
-        Qdrant
-
-    Returns:
-        Number of chunks indexed.
-    """
-
-    # -----------------------------------------------------
+# Index one AcademicStack resource
+def index_resource(db: Session, resource: Resource) -> int:
     # Step 1 — Update status
-    # -----------------------------------------------------
-
     resource.status = "indexing"
 
     db.commit()
     db.refresh(resource)
 
-
     temporary_pdf_path = None
 
-
     try:
-        # -------------------------------------------------
         # Step 2 — Get the resource owner
-        # -------------------------------------------------
-
         user = (
             db.query(User)
             .filter(User.id == resource.user_id)
@@ -137,99 +100,46 @@ def index_resource(
             )
 
 
-        # -------------------------------------------------
         # Step 3 — Decrypt Gemini API key
-        # -------------------------------------------------
-
-        gemini_api_key = decrypt_api_key(
-            user.gemini_api_key_encrypted
-        )
+        gemini_api_key = decrypt_api_key(user.gemini_api_key_encrypted)
 
 
-        # -------------------------------------------------
         # Step 4 — Create temporary PDF
-        # -------------------------------------------------
-
-        with tempfile.NamedTemporaryFile(
-            suffix=".pdf",
-            delete=False,
-        ) as temporary_file:
-
-            temporary_pdf_path = (
-                temporary_file.name
-            )
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temporary_file:
+            temporary_pdf_path = temporary_file.name
 
 
-        # -------------------------------------------------
         # Step 5 — Download PDF
-        # -------------------------------------------------
-
-        download_pdf(
-            url=resource.cloudinary_url,
-            destination=temporary_pdf_path,
-        )
+        download_pdf(url=resource.cloudinary_url, destination=temporary_pdf_path)
 
 
-        # -------------------------------------------------
         # Step 6 — Load PDF using LangChain
-        # -------------------------------------------------
-
-        documents = load_pdf(
-            pdf_path=temporary_pdf_path,
-        )
+        documents = load_pdf(pdf_path=temporary_pdf_path)
 
         if not documents:
-            raise ValueError(
-                "No text could be extracted from the PDF."
-            )
+            raise ValueError("No text could be extracted from the PDF.")
 
 
-        # -------------------------------------------------
         # Step 7 — Split documents
-        # -------------------------------------------------
-
-        chunks = split_documents(
-            documents=documents,
-        )
+        chunks = split_documents(documents=documents)
 
         if not chunks:
-            raise ValueError(
-                "PDF produced no searchable chunks."
-            )
+            raise ValueError("PDF produced no searchable chunks.")
 
 
-        # -------------------------------------------------
         # Step 8 — Add AcademicStack metadata
-        # -------------------------------------------------
-
-        chunks = enrich_documents(
-            documents=chunks,
-            resource=resource,
-        )
+        chunks = enrich_documents(documents=chunks, resource=resource)
 
 
-        # -------------------------------------------------
         # Step 9 — Create LangChain Qdrant store
-        # -------------------------------------------------
-
-        vector_store = create_vector_store(
-            api_key=gemini_api_key,
-        )
+        vector_store = create_vector_store(api_key=gemini_api_key)
 
 
-        # -------------------------------------------------
         # Step 10 — Store documents + embeddings
-        # -------------------------------------------------
-
-        vector_store.add_documents(
-            documents=chunks,
-        )
+        vector_store.add_documents(documents=chunks)
 
 
-        # -------------------------------------------------
         # Step 11 — Mark resource indexed
-        # -------------------------------------------------
-
         resource.status = "indexed"
 
         db.commit()
@@ -240,26 +150,13 @@ def index_resource(
 
 
     except Exception:
-
         resource.status = "indexing_failed"
-
         db.commit()
-
         raise
 
 
     finally:
-
-        # -------------------------------------------------
         # Always remove temporary PDF.
-        # -------------------------------------------------
 
-        if (
-            temporary_pdf_path
-            and os.path.exists(
-                temporary_pdf_path
-            )
-        ):
-            os.remove(
-                temporary_pdf_path
-            )
+        if temporary_pdf_path and os.path.exists(temporary_pdf_path):
+            os.remove(temporary_pdf_path)
