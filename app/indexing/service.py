@@ -46,40 +46,23 @@ def split_documents(documents: list[Document]) -> list[Document]:
 
 
 # Add AcademicStack-specific metadata to every chunk.
-def enrich_documents(
-    documents: list[Document],
-    resource: Resource,
-) -> list[Document]:
-    """
-    Add AcademicStack-specific metadata to every chunk.
-
-    Qdrant will store this metadata along with the vector.
-    """
+def enrich_documents(documents: list[Document], resource: Resource) -> list[Document]:
 
     enriched_documents = []
 
-    for chunk_index, document in enumerate(
-        documents
-    ):
-        metadata = dict(
-            document.metadata
-        )
+    for chunk_index, document in enumerate(documents):
 
-        # AcademicStack ownership metadata.
-        metadata.update(
-            {
+        metadata = dict(document.metadata)
+        metadata.update({
                 "resource_id": resource.id,
                 "resource_name": resource.name,
                 "subject": resource.subject,
                 "chapter": resource.chapters,
                 "visibility": resource.visibility,
                 "chunk_index": chunk_index,
-
-                # Record which embedding model created
-                # this vector.
                 "embedding_model": EMBEDDING_MODEL,
-            }
-        )
+        })
+        
 
         enriched_documents.append(
             Document(
