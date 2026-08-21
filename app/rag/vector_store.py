@@ -1,7 +1,7 @@
 from langchain_qdrant import QdrantVectorStore
 
 from app.rag.embeddings import create_embedding_model
-from app.vector_store.qdrant import  COLLECTION_NAME, get_qdrant_client
+from app.vector_store.qdrant import  COLLECTION_NAME, get_qdrant_client, ensure_collection
 
 
 
@@ -11,6 +11,8 @@ def create_vector_store(api_key: str) -> QdrantVectorStore:
     )
 
     client = get_qdrant_client()
+
+    ensure_collection()
 
     return QdrantVectorStore(
         client=client,

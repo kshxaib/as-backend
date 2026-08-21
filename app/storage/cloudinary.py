@@ -39,7 +39,7 @@ cloudinary.config(
 def upload_pdf(file, public_id: str, folder: str = "academicstack/resources"):
     result = cloudinary.uploader.upload(
         file.file,
-        resource_type="image",
+        resource_type="raw",
         folder=folder,
         public_id=public_id,
         overwrite=False,

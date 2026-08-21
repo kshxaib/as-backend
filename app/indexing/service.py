@@ -2,7 +2,7 @@ from langchain_community.document_loaders import PyMuPDFLoader
 import os
 import tempfile
 import requests
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from sqlalchemy.orm import Session
 

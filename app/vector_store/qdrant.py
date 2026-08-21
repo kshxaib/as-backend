@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchValue, Filter, VectorParams, Distance
 
 
 load_dotenv()
@@ -36,6 +36,20 @@ def check_qdrant_connection() -> bool:
         return False
 
 
+# Create the AcademicStack Qdrant collection if it does not already exist.
+def ensure_collection() -> None:
+    if client.collection_exists(COLLECTION_NAME):
+        return
+
+    client.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(
+            size=VECTOR_SIZE,
+            distance=Distance.COSINE,
+        ),
+    )
+
+
 # Delete all Qdrant vectors belonging to one resource.
 def delete_resource_vectors(resource_id: int) -> None:
 
@@ -54,4 +68,3 @@ def delete_resource_vectors(resource_id: int) -> None:
     )
 
 
-    
