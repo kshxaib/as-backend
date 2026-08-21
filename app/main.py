@@ -5,14 +5,22 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.db.database import engine
-from app.vector_store.qdrant import check_qdrant_connection
+from app.db.database import engine, Base
+import app.db.models
+from app.vector_store.qdrant import check_qdrant_connection, ensure_collection
+
+Base.metadata.create_all(bind=engine)
+try:
+    ensure_collection()
+except Exception:
+    pass
 
 from app.users.routes import router as users_router
 from app.resources.routes import router as resources_router
 from app.indexing.routes import router as indexing_router
 from app.question_banks.routes import router as question_banks_router
 from app.questions.routes import router as questions_router
+from app.answers.routes import router as answers_router
 
 
 
@@ -45,6 +53,7 @@ app.include_router(resources_router)
 app.include_router(indexing_router)
 app.include_router(question_banks_router)
 app.include_router(questions_router)
+app.include_router(answers_router)
 
 
 @app.get("/api/health")

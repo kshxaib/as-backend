@@ -100,8 +100,8 @@ def index_resource(db: Session, resource: Resource) -> int:
             )
 
 
-        # Step 3 — Decrypt Gemini API key
-        gemini_api_key = decrypt_api_key(user.gemini_api_key_encrypted)
+        # Step 3 — Decrypt OpenAI API key
+        openai_api_key = decrypt_api_key(user.openai_api_key_encrypted)
 
 
         # Step 4 — Create temporary PDF
@@ -132,7 +132,7 @@ def index_resource(db: Session, resource: Resource) -> int:
 
 
         # Step 9 — Create LangChain Qdrant store
-        vector_store = create_vector_store(api_key=gemini_api_key)
+        vector_store = create_vector_store(api_key=openai_api_key)
 
 
         # Step 10 — Store documents + embeddings

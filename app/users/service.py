@@ -7,13 +7,11 @@ from app.utils.encryption import encrypt_api_key
 
 def create_user(db: Session, user_data: UserCreate) -> User:
 
-    encrypted_gemini_key = encrypt_api_key(user_data.gemini_api_key)
-    encrypted_openrouter_key = encrypt_api_key(user_data.openrouter_api_key)
+    encrypted_openai_key = encrypt_api_key(user_data.openai_api_key)
 
     user = User(
         name=user_data.name,
-        gemini_api_key_encrypted=encrypted_gemini_key,
-        openrouter_api_key_encrypted=encrypted_openrouter_key,
+        openai_api_key_encrypted=encrypted_openai_key,
     )
 
     db.add(user)

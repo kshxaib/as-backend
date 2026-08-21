@@ -87,8 +87,8 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
                 "Question bank owner was not found."
             )
 
-        # Step 3 — Decrypt Gemini API key.
-        gemini_api_key = decrypt_api_key(user.gemini_api_key_encrypted)
+        # Step 3 — Decrypt OpenAI API key.
+        openai_api_key = decrypt_api_key(user.openai_api_key_encrypted)
 
         # Step 4 — Create temporary PDF.
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temporary_file:
@@ -113,9 +113,9 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         if not full_text.strip():
             raise ValueError("PDF produced no readable text.")
 
-        # Step 7 — Send text to Gemini for question extraction.
+        # Step 7 — Send text to OpenAI for question extraction.
         parsed_questions = parse_questions(
-            api_key=gemini_api_key,
+            api_key=openai_api_key,
             text=full_text,
         )
 

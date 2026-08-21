@@ -1,7 +1,7 @@
 import json
 import re
 
-from app.llm.service import call_gemini
+from app.llm.service import call_openai
 
 
 SYSTEM_INSTRUCTION = """You are an expert academic question paper analyzer.
@@ -24,7 +24,7 @@ Example output:
 ]"""
 
 
-# Parse question bank text into structured questions using Gemini.
+# Parse question bank text into structured questions using OpenAI.
 def parse_questions(api_key: str, text: str) -> list[dict]:
 
     if not text.strip():
@@ -32,7 +32,7 @@ def parse_questions(api_key: str, text: str) -> list[dict]:
 
     prompt = f"Extract all questions from this question paper:\n\n{text}"
 
-    response = call_gemini(
+    response = call_openai(
         api_key=api_key,
         prompt=prompt,
         system_instruction=SYSTEM_INSTRUCTION,

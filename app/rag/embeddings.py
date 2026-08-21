@@ -1,18 +1,17 @@
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
 
-EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIMENSION = 768
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIMENSION = 1536
 
 
-def create_embedding_model(api_key: str) -> GoogleGenerativeAIEmbeddings:
+def create_embedding_model(api_key: str) -> OpenAIEmbeddings:
 
     if not api_key:
-        raise ValueError("Gemini API key is required for embeddings.")
+        raise ValueError("OpenAI API key is required for embeddings.")
 
-    return GoogleGenerativeAIEmbeddings(
+    return OpenAIEmbeddings(
         model=EMBEDDING_MODEL,
-        google_api_key=api_key,
-        output_dimensionality=EMBEDDING_DIMENSION,
-    )
-    
+        openai_api_key=api_key,
+        dimensions=EMBEDDING_DIMENSION,
+    )

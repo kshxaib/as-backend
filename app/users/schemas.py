@@ -9,11 +9,7 @@ class UserCreate(BaseModel):
         max_length=100,
     )
 
-    gemini_api_key: str = Field(
-        min_length=1,
-    )
-
-    openrouter_api_key: str = Field(
+    openai_api_key: str = Field(
         min_length=1,
     )
 

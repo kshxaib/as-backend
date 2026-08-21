@@ -20,12 +20,7 @@ class User(Base):
         nullable=False,
     )
 
-    gemini_api_key_encrypted = Column(
-        String,
-        nullable=False,
-    )
-
-    openrouter_api_key_encrypted = Column(
+    openai_api_key_encrypted = Column(
         String,
         nullable=False,
     )
@@ -229,3 +224,137 @@ class Question(Base):
         default=datetime.utcnow,
         nullable=False,
     )
+
+
+
+class AnswerSet(Base):
+    __tablename__ = "answer_sets"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    question_bank_id = Column(
+        Integer,
+        ForeignKey("question_banks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+
+    # "generating", "completed", "failed", "completed_with_errors"
+    status = Column(
+        String(50),
+        nullable=False,
+        default="generating",
+    )
+
+    total_questions = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    completed_questions = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+
+class Answer(Base):
+    __tablename__ = "answers"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    answer_set_id = Column(
+        Integer,
+        ForeignKey("answer_sets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    question_id = Column(
+        Integer,
+        ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    question_number = Column(
+        Integer,
+        nullable=False,
+    )
+
+    question_text = Column(
+        Text,
+        nullable=False,
+    )
+
+    marks = Column(
+        Integer,
+        nullable=False,
+    )
+
+    # Generated Markdown answer
+    content = Column(
+        Text,
+        nullable=True,
+    )
+
+    # JSON array string of cited sources: [{"resource_name": "...", "page": 4, "chapter": "..."}]
+    sources = Column(
+        Text,
+        nullable=True,
+    )
+
+    # "pending", "generating", "completed", "failed"
+    status = Column(
+        String(50),
+        nullable=False,
+        default="pending",
+    )
+
+    error_message = Column(
+        Text,
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+

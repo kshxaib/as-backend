@@ -12,7 +12,7 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT","6333"))
 
 COLLECTION_NAME = "academicstack_resources"
 
-VECTOR_SIZE = 768
+VECTOR_SIZE = 1536
 
 client = QdrantClient(
     host=QDRANT_HOST,

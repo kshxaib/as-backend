@@ -4,7 +4,7 @@ from app.rag.vector_store import create_vector_store
 
 
 # Retrieve relevant study material using LangChain.
-def retrieve_relevant_documents(gemini_api_key: str, question: str, resource_ids: list[int], limit: int = 5) -> list[Document]:
+def retrieve_relevant_documents(openai_api_key: str, question: str, resource_ids: list[int], limit: int = 5) -> list[Document]:
     if not question.strip():
         return []
 
@@ -12,7 +12,7 @@ def retrieve_relevant_documents(gemini_api_key: str, question: str, resource_ids
         return []
 
     vector_store = create_vector_store(
-        api_key=gemini_api_key,
+        api_key=openai_api_key,
     )
 
 
