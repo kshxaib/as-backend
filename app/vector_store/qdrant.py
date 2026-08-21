@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 
 load_dotenv()
@@ -33,3 +34,24 @@ def check_qdrant_connection() -> bool:
 
     except Exception:
         return False
+
+
+# Delete all Qdrant vectors belonging to one resource.
+def delete_resource_vectors(resource_id: int) -> None:
+
+    client.delete(
+        collection_name=COLLECTION_NAME,
+        points_selector=Filter(
+            must=[
+                FieldCondition(
+                    key="metadata.resource_id",
+                    match=MatchValue(
+                        value=resource_id,
+                    ),
+                )
+            ]
+        ),
+    )
+
+
+    
