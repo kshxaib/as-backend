@@ -113,10 +113,10 @@ def authenticate_user(db: Session, login_data: UserLogin) -> tuple[User, str]:
 
 def update_user_openai_key(db: Session, user: User, openai_key: str) -> User:
     clean_key = openai_key.strip()
-    if not clean_key.startswith("sk-") and len(clean_key) < 20:
+    if not clean_key.startswith("sk-") or len(clean_key) < 20:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OpenAI API key format. Keys typically start with 'sk-'.",
+            detail="Invalid OpenAI API key format. OpenAI keys must start with 'sk-' and be at least 20 characters long.",
         )
 
     user.openai_api_key_encrypted = encrypt_api_key(clean_key)
@@ -127,10 +127,10 @@ def update_user_openai_key(db: Session, user: User, openai_key: str) -> User:
 
 def update_user_gemini_key(db: Session, user: User, gemini_key: str) -> User:
     clean_key = gemini_key.strip()
-    if not clean_key:
+    if clean_key.startswith(("gsk_", "nvapi-", "sk-or-")) or len(clean_key) < 25:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Gemini API key format.",
+            detail="Invalid Google Gemini API key. Gemini keys usually start with 'AIzaSy' or 'AQ.' and must be at least 25 characters long.",
         )
 
     user.gemini_api_key_encrypted = encrypt_api_key(clean_key)
@@ -141,10 +141,10 @@ def update_user_gemini_key(db: Session, user: User, gemini_key: str) -> User:
 
 def update_user_groq_key(db: Session, user: User, groq_key: str) -> User:
     clean_key = groq_key.strip()
-    if not clean_key:
+    if not clean_key.startswith("gsk_") or len(clean_key) < 25:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Groq API key format.",
+            detail="Invalid Groq API key format. Groq keys must start with 'gsk_' and be at least 25 characters long.",
         )
 
     user.groq_api_key_encrypted = encrypt_api_key(clean_key)
@@ -155,10 +155,10 @@ def update_user_groq_key(db: Session, user: User, groq_key: str) -> User:
 
 def update_user_openrouter_key(db: Session, user: User, openrouter_key: str) -> User:
     clean_key = openrouter_key.strip()
-    if not clean_key:
+    if not clean_key.startswith("sk-or-") or len(clean_key) < 25:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OpenRouter API key format.",
+            detail="Invalid OpenRouter API key format. OpenRouter keys must start with 'sk-or-' and be at least 25 characters long.",
         )
 
     user.openrouter_api_key_encrypted = encrypt_api_key(clean_key)
@@ -169,10 +169,10 @@ def update_user_openrouter_key(db: Session, user: User, openrouter_key: str) -> 
 
 def update_user_nvidia_key(db: Session, user: User, nvidia_key: str) -> User:
     clean_key = nvidia_key.strip()
-    if not clean_key:
+    if not clean_key.startswith("nvapi-") or len(clean_key) < 25:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid NVIDIA API key format.",
+            detail="Invalid NVIDIA NIM API key format. NVIDIA keys must start with 'nvapi-' and be at least 25 characters long.",
         )
 
     user.nvidia_api_key_encrypted = encrypt_api_key(clean_key)
