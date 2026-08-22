@@ -14,15 +14,40 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     HRFlowable,
+    KeepTogether,
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 
-# ─── Register Modern Unicode TrueType Fonts ──────────────────────────────────
+# ─── Reading Room print palette ───────────────────────────────────────────────
+# Restrained, grayscale-printable academic palette (DESIGN_SYSTEM.md §2/§8):
+#   INK/MUTED/HAIRLINE  — paper foundation
+#   TEAL                — Scholar Teal, product accent (folio numbers, rules)
+#   AMBER               — Manuscript Amber, AI-provenance ONLY
+#   GOLD                — Laurel Gold, source/reference accents
+INK = colors.HexColor("#1F2A37")
+MUTED = colors.HexColor("#5B6472")
+HAIRLINE = colors.HexColor("#D8DCE1")
+PAPER_WELL = colors.HexColor("#F4F5F4")
+TEAL = colors.HexColor("#0E6E6A")
+AMBER = colors.HexColor("#9A5F0E")
+GOLD = colors.HexColor("#8C701C")
+
+# ─── Font registration ────────────────────────────────────────────────────────
+# Sans body: registered TTFs when available (Windows deploys), Helvetica
+# fallback otherwise. Serif display / mono metadata use ReportLab's always
+# available built-ins (Times-Roman family / Courier) so no font files need to
+# ship with the backend (DESIGN_SYSTEM.md §7 fallback guidance).
 FONT_REGULAR = "Helvetica"
 FONT_BOLD = "Helvetica-Bold"
+
+SERIF = "Times-Roman"
+SERIF_BOLD = "Times-Bold"
+SERIF_ITALIC = "Times-Italic"
+MONO = "Courier"
+MONO_BOLD = "Courier-Bold"
 
 try:
     windows_fonts = "C:/Windows/Fonts"
@@ -64,27 +89,27 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_decorations(self, page_count):
         self.saveState()
-        self.setFont(FONT_REGULAR, 8)
-        self.setFillColor(colors.HexColor("#64748b"))
+        self.setFont(MONO, 7.5)
+        self.setFillColor(MUTED)
 
-        # Header (pages 2+)
+        # Header (pages 2+) — restrained running head
         if self._pageNumber > 1:
-            self.drawString(54, 750, "AcademicStack • Solved Question Bank")
-            self.setStrokeColor(colors.HexColor("#cbd5e1"))
+            self.drawString(54, 750, "ACADEMICSTACK · SOLUTION MANUSCRIPT")
+            self.setStrokeColor(HAIRLINE)
             self.setLineWidth(0.5)
             self.line(54, 744, 558, 744)
 
         # Footer
-        self.setStrokeColor(colors.HexColor("#cbd5e1"))
+        self.setStrokeColor(HAIRLINE)
         self.setLineWidth(0.5)
         self.line(54, 45, 558, 45)
 
-        page_str = f"Page {self._pageNumber} of {page_count}"
+        page_str = f"PAGE {self._pageNumber} OF {page_count}"
         self.drawRightString(558, 32, page_str)
         self.drawString(
             54,
             32,
-            "AcademicStack AI-Assisted Solved Paper • Strictly for Educational Reference",
+            "AcademicStack AI-Assisted Solved Paper · Strictly for Educational Reference",
         )
         self.restoreState()
 
@@ -171,8 +196,8 @@ def latex_to_unicode(latex_str: str) -> str:
         (r"\\qquad", "   "),
         (r"\\left", ""),
         (r"\\right", ""),
-        (r"\\{", "{"),
-        (r"\\}", "}"),
+        (r"\\\{", "{"),
+        (r"\\\}", "}"),
         (r"\\\\", "\n"),
         (r"\\", ""),
     ]
@@ -288,9 +313,9 @@ def parse_markdown_table(
 
     table = Table(rows, colWidths=col_widths)
     table_style_commands = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1e293b")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("BACKGROUND", (0, 0), (-1, 0), PAPER_WELL),
+        ("TEXTCOLOR", (0, 0), (-1, -1), INK),
+        ("GRID", (0, 0), (-1, -1), 0.5, HAIRLINE),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
@@ -301,13 +326,9 @@ def parse_markdown_table(
     # Alternating row background
     for row_idx in range(1, len(rows)):
         if row_idx % 2 == 1:
-            table_style_commands.append(
-                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#ffffff"))
-            )
+            table_style_commands.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.white))
         else:
-            table_style_commands.append(
-                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f8fafc"))
-            )
+            table_style_commands.append(("BACKGROUND", (0, row_idx), (-1, row_idx), PAPER_WELL))
 
     table.setStyle(TableStyle(table_style_commands))
     return table
@@ -347,7 +368,7 @@ def parse_markdown_to_flowables(
         fontSize=9,
         leading=12,
         fontName=FONT_BOLD,
-        textColor=colors.HexColor("#0f172a"),
+        textColor=INK,
     )
 
     for chunk in chunks:
@@ -364,17 +385,17 @@ def parse_markdown_to_flowables(
             unicode_math = latex_to_unicode(chunk)
             formatted_math = xml_escape(unicode_math).replace("\n", "<br/>")
 
-            math_p = Paragraph(f"<b>{formatted_math}</b>", formula_style)
-            # Wrap in highlighted formula table
+            math_p = Paragraph(formatted_math, formula_style)
+            # Wrap in quiet paper-well formula block (hairline + teal rule)
             formula_table = Table(
                 [[math_p]],
                 colWidths=[504],
             )
             formula_table.setStyle(
                 TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                    ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#818cf8")),
-                    ("LINELEFT", (0, 0), (-1, -1), 3.5, colors.HexColor("#4f46e5")),
+                    ("BACKGROUND", (0, 0), (-1, -1), PAPER_WELL),
+                    ("BOX", (0, 0), (-1, -1), 0.5, HAIRLINE),
+                    ("LINEBEFORE", (0, 0), (0, -1), 2, TEAL),
                     ("PADDING", (0, 0), (-1, -1), 7),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -434,7 +455,7 @@ def parse_markdown_to_flowables(
                 item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
                 item_title = xml_escape(item_title)
                 flowables.append(Spacer(1, 5))
-                flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
+                flowables.append(Paragraph(item_title, heading_style))
                 flowables.append(Spacer(1, 2))
                 continue
 
@@ -462,153 +483,187 @@ def generate_solved_question_bank_pdf(
         pagesize=letter,
         leftMargin=54,
         rightMargin=54,
-        topMargin=60,
-        bottomMargin=55,
+        topMargin=64,
+        bottomMargin=58,
     )
 
     styles = getSampleStyleSheet()
 
-    # ── Custom Typography Styles ─────────────────────────────────────────────
+    # ── Reading Room typography (§3/§7): serif display · sans body · mono meta ──
     brand_style = ParagraphStyle(
         "BrandStyle",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=11,
-        leading=13,
-        textColor=colors.HexColor("#4f46e5"),
+        fontName=MONO_BOLD,
+        fontSize=8.5,
+        leading=11,
+        textColor=TEAL,
     )
 
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Title"],
-        fontName=FONT_BOLD,
-        fontSize=18,
-        leading=22,
-        textColor=colors.HexColor("#0f172a"),
+        fontName=SERIF_BOLD,
+        fontSize=22,
+        leading=26,
+        textColor=INK,
         alignment=0,
+        spaceBefore=2,
     )
 
     subtitle_style = ParagraphStyle(
         "SubtitleStyle",
-        parent=styles["Normal"],
-        fontName=FONT_REGULAR,
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor("#475569"),
+        fontName=SERIF_ITALIC,
+        fontSize=12,
+        leading=15,
+        textColor=MUTED,
     )
 
-    disclaimer_style = ParagraphStyle(
-        "DisclaimerStyle",
-        parent=styles["Normal"],
+    meta_style = ParagraphStyle(
+        "MetaStyle",
+        fontName=MONO,
+        fontSize=8,
+        leading=12,
+        textColor=MUTED,
+    )
+
+    provenance_style = ParagraphStyle(
+        "ProvenanceStyle",
         fontName=FONT_REGULAR,
         fontSize=8,
         leading=11,
-        textColor=colors.HexColor("#b91c1c"),
+        textColor=AMBER,
+    )
+
+    notice_style = ParagraphStyle(
+        "NoticeStyle",
+        fontName=FONT_REGULAR,
+        fontSize=8,
+        leading=11.5,
+        textColor=MUTED,
+    )
+
+    folio_style = ParagraphStyle(
+        "FolioStyle",
+        fontName=MONO_BOLD,
+        fontSize=9,
+        leading=12,
+        textColor=TEAL,
     )
 
     question_title_style = ParagraphStyle(
         "QuestionTitleStyle",
-        parent=styles["Heading2"],
-        fontName=FONT_BOLD,
-        fontSize=10.5,
-        leading=14,
-        textColor=colors.HexColor("#1e1b4b"),
+        fontName=SERIF_BOLD,
+        fontSize=11.5,
+        leading=15,
+        textColor=INK,
+    )
+
+    marks_style = ParagraphStyle(
+        "MarksStyle",
+        fontName=MONO,
+        fontSize=8.5,
+        leading=12,
+        textColor=MUTED,
+        alignment=2,  # right-aligned mono figure
     )
 
     answer_heading_style = ParagraphStyle(
         "AnswerHeadingStyle",
-        parent=styles["Normal"],
         fontName=FONT_BOLD,
-        fontSize=10,
+        fontSize=9.5,
         leading=13,
-        textColor=colors.HexColor("#312e81"),
+        textColor=INK,
+        keepWithNext=1,  # never strand a heading at a page bottom (§14)
     )
 
     answer_body_style = ParagraphStyle(
         "AnswerBodyStyle",
-        parent=styles["BodyText"],
         fontName=FONT_REGULAR,
         fontSize=9,
         leading=13.5,
-        textColor=colors.HexColor("#1e293b"),
+        textColor=INK,
     )
 
     formula_style = ParagraphStyle(
         "FormulaStyle",
-        parent=styles["Normal"],
         fontName=FONT_BOLD,
         fontSize=9.5,
         leading=13,
-        textColor=colors.HexColor("#1e1b4b"),
+        textColor=INK,
         alignment=1,  # Center aligned
+    )
+
+    source_heading_style = ParagraphStyle(
+        "SourceHeadingStyle",
+        fontName=MONO,
+        fontSize=7.5,
+        leading=10,
+        textColor=GOLD,
+        keepWithNext=1,
     )
 
     source_style = ParagraphStyle(
         "SourceStyle",
-        parent=styles["Normal"],
         fontName=FONT_REGULAR,
         fontSize=8,
-        leading=11,
-        textColor=colors.HexColor("#0284c7"),
+        leading=11.5,
+        textColor=MUTED,
     )
 
     story = []
 
-    # 1. Header Banner
-    story.append(Paragraph("ACADEMICSTACK SOLUTIONS", brand_style))
-    story.append(Spacer(1, 3))
-    story.append(Paragraph(f"{subject} — {question_bank_name}", title_style))
-    story.append(Spacer(1, 3))
+    # ── 1. Title block — editorial booklet head (no cover page) ────────────────
+    story.append(Paragraph("ACADEMICSTACK", brand_style))
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=0.75, color=INK, spaceAfter=10))
+
+    story.append(Paragraph(xml_escape(question_bank_name), title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Solution Manuscript", subtitle_style))
+    story.append(Spacer(1, 6))
+
+    total_q = len(answers)
+    total_marks = sum(int(a.get("marks") or 0) for a in answers)
+    prepared_date = datetime.utcnow().strftime("%B %d, %Y")
     story.append(
         Paragraph(
-            f"Generated on {datetime.utcnow().strftime('%B %d, %Y')} • RAG Grounded & AI Verified Answer Set",
-            subtitle_style,
+            xml_escape(f"{subject.upper()} · {total_q} QUESTIONS · {total_marks} MARKS · PREPARED {prepared_date.upper()}"),
+            meta_style,
         )
     )
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 4))
 
-    # 2. Disclaimer Callout Box
-    disclaimer_html = (
+    # Truthful AI provenance — pipeline fact only, no per-answer claims (§11)
+    story.append(
+        Paragraph(
+            "Answers drafted from your linked study material via RAG and refined "
+            "by an academic AI reviewer pass.",
+            provenance_style,
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    # ── 2. Notice — neutral paper well (was an alarm-red callout) ──────────────
+    notice_html = (
         "<b>Notice:</b> This document contains AI-generated examination solutions grounded in verified study "
         "materials. It is designed to assist exam preparation, conceptual clarity, and revision."
     )
-    disclaimer_table = Table(
-        [[Paragraph(disclaimer_html, disclaimer_style)]],
+    notice_table = Table(
+        [[Paragraph(notice_html, notice_style)]],
         colWidths=[504],
     )
-    disclaimer_table.setStyle(
+    notice_table.setStyle(
         TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef2f2")),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#fca5a5")),
+            ("BACKGROUND", (0, 0), (-1, -1), PAPER_WELL),
+            ("BOX", (0, 0), (-1, -1), 0.5, HAIRLINE),
+            ("LINEBEFORE", (0, 0), (0, -1), 2, TEAL),
             ("PADDING", (0, 0), (-1, -1), 7),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ])
     )
-    story.append(disclaimer_table)
-    story.append(Spacer(1, 10))
-
-    # 3. Stats Strip
-    total_q = len(answers)
-    total_marks = sum(int(a.get("marks") or 0) for a in answers)
-    stats_data = [[
-        Paragraph(f"<b>Total Questions:</b> {total_q}", subtitle_style),
-        Paragraph(f"<b>Total Marks:</b> {total_marks}", subtitle_style),
-        Paragraph(f"<b>Subject:</b> {subject}", subtitle_style),
-    ]]
-    stats_table = Table(stats_data, colWidths=[168, 168, 168])
-    stats_table.setStyle(
-        TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-            ("PADDING", (0, 0), (-1, -1), 5),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ])
-    )
-    story.append(stats_table)
+    story.append(notice_table)
     story.append(Spacer(1, 14))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=12))
 
-    # 4. Answers List
+    # ── 3. Questions & answers ──────────────────────────────────────────────────
     for index, ans in enumerate(answers, start=1):
         q_num = ans.get("question_number", index)
         q_text = ans.get("question_text", "Untitled Question")
@@ -624,63 +679,69 @@ def generate_solved_question_bank_pdf(
         else:
             sources_list = raw_sources
 
-        # Question Header Box
-        q_header_text = f"<b>Q{q_num}. {xml_escape(q_text)}</b>"
-        q_marks_text = f"<b>[{marks} Marks]</b>"
-
-        q_table = Table(
+        # Editorial question head: mono folio + serif question + mono marks,
+        # underlined by a hairline. No colored panel (print-friendly).
+        q_head = Table(
             [[
-                Paragraph(q_header_text, question_title_style),
-                Paragraph(
-                    q_marks_text,
-                    ParagraphStyle(
-                        "MarkRight",
-                        parent=question_title_style,
-                        alignment=2,
-                        textColor=colors.HexColor("#4f46e5"),
-                    ),
-                ),
+                Paragraph(f"Q{q_num:02d}", folio_style),
+                Paragraph(xml_escape(q_text), question_title_style),
+                Paragraph(f"[{marks} MARKS]", marks_style),
             ]],
-            colWidths=[420, 84],
+            colWidths=[36, 366, 102],
         )
-        q_table.setStyle(
+        q_head.setStyle(
             TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eef2ff")),
-                ("PADDING", (0, 0), (-1, -1), 6),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d2fe")),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.75, HAIRLINE),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ])
         )
 
-        story.append(q_table)
-        story.append(Spacer(1, 6))
-
-        # Parse structured answer content and formula boxes
+        answer_label = Paragraph("ANSWER", source_heading_style)
         answer_flowables = parse_markdown_to_flowables(
             content,
             body_style=answer_body_style,
             heading_style=answer_heading_style,
             formula_style=formula_style,
         )
+
+        # §14: keep the question head, ANSWER label and first content block
+        # together so a break never strands them at a page bottom.
+        head_group = [q_head, Spacer(1, 8), answer_label, Spacer(1, 4)]
+        if answer_flowables:
+            head_group.append(answer_flowables.pop(0))
+        story.append(KeepTogether(head_group))
         story.extend(answer_flowables)
 
-        # Sources footer
+        # Sources footer — numbered, real fields only
         if sources_list:
-            source_labels = []
-            for s in sources_list:
+            source_lines = []
+            for i, s in enumerate(sources_list, start=1):
                 res = s.get("resource_name", "Material")
                 p = s.get("page", "")
                 ch = s.get("chapter", "")
-                label = f"{res} (Pg {p})" if p and p != "N/A" else res
+                meta_parts = []
                 if ch and ch != "General":
-                    label += f" • {ch}"
-                source_labels.append(label)
-            source_text = f"<b>Verified Sources:</b> {', '.join(source_labels)}"
-            story.append(Paragraph(xml_escape(source_text), source_style))
-            story.append(Spacer(1, 4))
+                    meta_parts.append(str(ch))
+                if p and p != "N/A":
+                    meta_parts.append(f"pg. {p}")
+                line = f"[{i}] {xml_escape(str(res))}"
+                if meta_parts:
+                    line += f" — {xml_escape(' · '.join(meta_parts))}"
+                source_lines.append(line)
+            sources_block = [
+                Paragraph("SOURCES", source_heading_style),
+                Spacer(1, 2),
+                Paragraph("<br/>".join(source_lines), source_style),
+            ]
+            story.append(Spacer(1, 6))
+            story.append(KeepTogether(sources_block))
 
-        story.append(Spacer(1, 10))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=12))
+        story.append(Spacer(1, 12))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=HAIRLINE, spaceAfter=14))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
