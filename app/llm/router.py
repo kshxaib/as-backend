@@ -14,9 +14,6 @@ PROVIDER_CONFIGS: dict[str, dict[str, Any]] = {
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "default_models": [
-            "google/gemma-4-31b-it:free",
-            "google/gemma-4-26b-a4b-it:free",
-            "thinkingmachines/inkling:free",
             "liquid/lfm-2.5-2.6b:free",
         ],
     },
