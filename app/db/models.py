@@ -47,7 +47,7 @@ class User(Base):
         nullable=True,
     )
 
-    cerebras_api_key_encrypted = Column(
+    openrouter_api_key_encrypted = Column(
         String,
         nullable=True,
     )

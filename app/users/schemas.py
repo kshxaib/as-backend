@@ -20,7 +20,7 @@ class UserProfileResponse(BaseModel):
     has_openai_key: bool
     has_gemini_key: bool
     has_groq_key: bool
-    has_cerebras_key: bool
+    has_openrouter_key: bool
     has_nvidia_key: bool
     created_at: datetime
 
@@ -47,8 +47,8 @@ class GroqKeyUpdate(BaseModel):
     groq_api_key: str = Field(min_length=1)
 
 
-class CerebrasKeyUpdate(BaseModel):
-    cerebras_api_key: str = Field(min_length=1)
+class OpenRouterKeyUpdate(BaseModel):
+    openrouter_api_key: str = Field(min_length=1)
 
 
 class NvidiaKeyUpdate(BaseModel):

@@ -118,10 +118,12 @@ DRAFT ANSWER:
 Perform your Academic Review. Ensure math formulas ($$ / $) are formatted cleanly without extra linebreaks and refine the answer for exam scoring."""
 
     try:
+        short_q = question_text[:50] + "..." if len(question_text) > 50 else question_text
         reviewed_answer = call_review(
             prompt=review_prompt,
             system_instruction=REVIEWER_SYSTEM_INSTRUCTION,
             user_keys=user_keys,
+            task_name=f"AI Reviewer ({marks}M: '{short_q}')",
         )
         return reviewed_answer.strip() if reviewed_answer and len(reviewed_answer.strip()) > 30 else draft_answer
     except Exception:
@@ -157,10 +159,12 @@ def generate_rag_answer(
     )
 
     # 4. Draft Answer Generation using multi-provider router
+    short_q = question_text[:50] + "..." if len(question_text) > 50 else question_text
     draft_answer = call_generation(
         prompt=prompt,
         system_instruction=DRAFT_SYSTEM_INSTRUCTION,
         user_keys=user_keys,
+        task_name=f"RAG Solution Generation ({marks}M: '{short_q}')",
     )
 
     # 5. AI Answer Reviewer Pass

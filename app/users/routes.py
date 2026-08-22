@@ -8,7 +8,7 @@ from app.users.schemas import (
     OpenAIKeyUpdate,
     GeminiKeyUpdate,
     GroqKeyUpdate,
-    CerebrasKeyUpdate,
+    OpenRouterKeyUpdate,
     NvidiaKeyUpdate,
     TokenResponse,
     UserCreate,
@@ -23,10 +23,10 @@ from app.users.service import (
     delete_user_gemini_key,
     delete_user_nvidia_key,
     delete_user_openai_key,
-    delete_user_cerebras_key,
+    delete_user_openrouter_key,
     delete_user_groq_key,
     get_user,
-    get_user_cerebras_key,
+    get_user_openrouter_key,
     get_user_gemini_key,
     get_user_nvidia_key,
     get_user_groq_key,
@@ -34,8 +34,9 @@ from app.users.service import (
     to_profile_response,
     update_user_gemini_key,
     update_user_groq_key,
-    update_user_cerebras_key,
+    update_user_openrouter_key,
     update_user_nvidia_key,
+    update_user_openai_key,
 )
 
 router = APIRouter(
@@ -110,13 +111,13 @@ def update_groq_key_endpoint(
     return to_profile_response(user)
 
 
-@router.put("/auth/profile/cerebras-key", response_model=UserProfileResponse)
-def update_cerebras_key_endpoint(
-    payload: CerebrasKeyUpdate,
+@router.put("/auth/profile/openrouter-key", response_model=UserProfileResponse)
+def update_openrouter_key_endpoint(
+    payload: OpenRouterKeyUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user = update_user_cerebras_key(db=db, user=current_user, cerebras_key=payload.cerebras_api_key)
+    user = update_user_openrouter_key(db=db, user=current_user, openrouter_key=payload.openrouter_api_key)
     return to_profile_response(user)
 
 
@@ -148,12 +149,12 @@ def delete_groq_key_endpoint(
     return to_profile_response(user)
 
 
-@router.delete("/auth/profile/cerebras-key", response_model=UserProfileResponse)
-def delete_cerebras_key_endpoint(
+@router.delete("/auth/profile/openrouter-key", response_model=UserProfileResponse)
+def delete_openrouter_key_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    user = delete_user_cerebras_key(db=db, user=current_user)
+    user = delete_user_openrouter_key(db=db, user=current_user)
     return to_profile_response(user)
 
 

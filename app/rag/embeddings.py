@@ -14,7 +14,7 @@ EMBEDDING_DIMENSION_OPENAI = 1536
 
 def get_embeddings_instance(user_keys: dict[str, str] | None = None) -> Tuple[Embeddings, int, str]:
     """
-    Returns an active LangChain Embeddings instance, dimension, and model name.
+    Returns an active LangChain Embeddings instance, dimension, and model name with terminal logging.
     Priority:
     1. Gemini API Key (User key or .env) -> 100% Free gemini-embedding-001 (3072-dim)
     2. OpenAI API Key (User key or .env) -> text-embedding-3-small (1536-dim)
@@ -25,6 +25,7 @@ def get_embeddings_instance(user_keys: dict[str, str] | None = None) -> Tuple[Em
 
     if gemini_key:
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        print(f"\n[VECTOR EMBEDDINGS] Provider: 'GOOGLE GEMINI' | Model: '{EMBEDDING_MODEL_GEMINI}' | Dimensions: {EMBEDDING_DIMENSION_GEMINI}")
         return (
             GoogleGenerativeAIEmbeddings(
                 model=EMBEDDING_MODEL_GEMINI,
@@ -35,6 +36,7 @@ def get_embeddings_instance(user_keys: dict[str, str] | None = None) -> Tuple[Em
         )
     elif openai_key:
         from langchain_openai import OpenAIEmbeddings
+        print(f"\n[VECTOR EMBEDDINGS] Provider: 'OPENAI' | Model: '{EMBEDDING_MODEL_OPENAI}' | Dimensions: {EMBEDDING_DIMENSION_OPENAI}")
         return (
             OpenAIEmbeddings(
                 model=EMBEDDING_MODEL_OPENAI,

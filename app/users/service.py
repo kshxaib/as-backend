@@ -1,3 +1,4 @@
+import os
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
@@ -37,11 +38,11 @@ def user_has_groq_key(user: User | None) -> bool:
         return False
 
 
-def user_has_cerebras_key(user: User | None) -> bool:
-    if not user or not user.cerebras_api_key_encrypted:
+def user_has_openrouter_key(user: User | None) -> bool:
+    if not user or not user.openrouter_api_key_encrypted:
         return False
     try:
-        decrypted = decrypt_api_key(user.cerebras_api_key_encrypted)
+        decrypted = decrypt_api_key(user.openrouter_api_key_encrypted)
         return bool(decrypted and len(decrypted.strip()) > 5)
     except Exception:
         return False
@@ -65,7 +66,7 @@ def to_profile_response(user: User) -> UserProfileResponse:
         has_openai_key=user_has_openai_key(user),
         has_gemini_key=user_has_gemini_key(user),
         has_groq_key=user_has_groq_key(user),
-        has_cerebras_key=user_has_cerebras_key(user),
+        has_openrouter_key=user_has_openrouter_key(user),
         has_nvidia_key=user_has_nvidia_key(user),
         created_at=user.created_at,
     )
@@ -86,7 +87,7 @@ def register_user(db: Session, user_data: UserRegister) -> tuple[User, str]:
         openai_api_key_encrypted=None,
         gemini_api_key_encrypted=None,
         groq_api_key_encrypted=None,
-        cerebras_api_key_encrypted=None,
+        openrouter_api_key_encrypted=None,
         nvidia_api_key_encrypted=None,
     )
 
@@ -152,15 +153,15 @@ def update_user_groq_key(db: Session, user: User, groq_key: str) -> User:
     return user
 
 
-def update_user_cerebras_key(db: Session, user: User, cerebras_key: str) -> User:
-    clean_key = cerebras_key.strip()
+def update_user_openrouter_key(db: Session, user: User, openrouter_key: str) -> User:
+    clean_key = openrouter_key.strip()
     if not clean_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Cerebras API key format.",
+            detail="Invalid OpenRouter API key format.",
         )
 
-    user.cerebras_api_key_encrypted = encrypt_api_key(clean_key)
+    user.openrouter_api_key_encrypted = encrypt_api_key(clean_key)
     db.commit()
     db.refresh(user)
     return user
@@ -201,8 +202,8 @@ def delete_user_groq_key(db: Session, user: User) -> User:
     return user
 
 
-def delete_user_cerebras_key(db: Session, user: User) -> User:
-    user.cerebras_api_key_encrypted = None
+def delete_user_openrouter_key(db: Session, user: User) -> User:
+    user.openrouter_api_key_encrypted = None
     db.commit()
     db.refresh(user)
     return user
@@ -293,7 +294,7 @@ def get_user_groq_key(db: Session, user_id: int) -> str:
         )
 
 
-def get_user_cerebras_key(db: Session, user_id: int) -> str:
+def get_user_openrouter_key(db: Session, user_id: int) -> str:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -301,21 +302,21 @@ def get_user_cerebras_key(db: Session, user_id: int) -> str:
             detail=f"User with ID {user_id} not found.",
         )
 
-    if not user.cerebras_api_key_encrypted:
+    if not user.openrouter_api_key_encrypted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cerebras API key is missing. Please add your Cerebras API key in your Profile settings.",
+            detail="OpenRouter API key is missing. Please add your OpenRouter API key in your Profile settings.",
         )
 
     try:
-        decrypted = decrypt_api_key(user.cerebras_api_key_encrypted)
+        decrypted = decrypt_api_key(user.openrouter_api_key_encrypted)
         if not decrypted:
             raise ValueError()
         return decrypted
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt Cerebras API key. Please re-enter your key in your Profile settings.",
+            detail="Failed to decrypt OpenRouter API key. Please re-enter your key in your Profile settings.",
         )
 
 
@@ -350,12 +351,16 @@ def get_user(db: Session, user_id: int) -> User | None:
 
 
 def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
-    """Retrieve all decrypted API keys for a user, falling back to None if not set."""
+    """
+    Retrieve all decrypted API keys for a user.
+    Only user-stored keys are used (no env fallback), EXCEPT OpenAI which falls back to env
+    so paid users don't need to re-enter it if it's already set in .env.
+    """
     user = db.query(User).filter(User.id == user_id).first()
     keys = {
         "gemini": None,
         "groq": None,
-        "cerebras": None,
+        "openrouter": None,
         "nvidia": None,
         "openai": None,
     }
@@ -374,9 +379,9 @@ def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
         except Exception:
             pass
 
-    if user.cerebras_api_key_encrypted:
+    if user.openrouter_api_key_encrypted:
         try:
-            keys["cerebras"] = decrypt_api_key(user.cerebras_api_key_encrypted)
+            keys["openrouter"] = decrypt_api_key(user.openrouter_api_key_encrypted)
         except Exception:
             pass
 
@@ -386,16 +391,20 @@ def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
         except Exception:
             pass
 
+    # OpenAI: user key first, then env fallback (optional provider)
     if user.openai_api_key_encrypted:
         try:
             keys["openai"] = decrypt_api_key(user.openai_api_key_encrypted)
         except Exception:
             pass
+    if not keys["openai"]:
+        keys["openai"] = os.getenv("OPENAI_API_KEY")
 
     return keys
 
+
 def check_user_has_all_required_keys(db: Session, user_id: int) -> None:
-    """Ensure user has entered all 4 required free API keys (Gemini, Groq, Cerebras, NVIDIA NIM)."""
+    """Ensure user has entered all 4 required free API keys (Gemini, Groq, OpenRouter, NVIDIA NIM)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
@@ -405,8 +414,8 @@ def check_user_has_all_required_keys(db: Session, user_id: int) -> None:
         missing.append("Google Gemini")
     if not user.groq_api_key_encrypted:
         missing.append("Groq Cloud")
-    if not user.cerebras_api_key_encrypted:
-        missing.append("Cerebras Cloud")
+    if not user.openrouter_api_key_encrypted:
+        missing.append("OpenRouter")
     if not user.nvidia_api_key_encrypted:
         missing.append("NVIDIA NIM")
 
@@ -415,7 +424,6 @@ def check_user_has_all_required_keys(db: Session, user_id: int) -> None:
             status_code=400,
             detail=f"Missing required free API keys: {', '.join(missing)}. Please configure all 4 free keys in Profile settings to enable AI features.",
         )
-
 
 
 # Legacy support
@@ -428,7 +436,7 @@ def create_user(db: Session, user_data: UserCreate) -> User:
         openai_api_key_encrypted=encrypted_key,
         gemini_api_key_encrypted=None,
         groq_api_key_encrypted=None,
-        cerebras_api_key_encrypted=None,
+        openrouter_api_key_encrypted=None,
         nvidia_api_key_encrypted=None,
     )
     db.add(user)

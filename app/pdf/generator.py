@@ -186,19 +186,131 @@ def latex_to_unicode(latex_str: str) -> str:
 
 
 # ─── XML Safe Text Cleaner for ReportLab ──────────────────────────────────────
+ALLOWED_TAG_PATTERN = re.compile(
+    r"(</?(?:b|i|u|sub|sup|font|color)(?:\s+[^>]+)?>|<br/>)",
+    re.IGNORECASE,
+)
+
+
 def xml_escape(text: str) -> str:
-    # Escape &, <, and > safely without destroying ReportLab tags <b>, <i>, <br/>
-    parts = re.split(r"(<[^>]+>)", text)
+    """
+    Sanitizes raw HTML/Markdown into safe ReportLab-compliant XML.
+    - Converts all variants of <br> into <br/>
+    - Strips unsupported HTML tags (table, div, p, span, li, etc.)
+    - Safely escapes &, <, > without breaking allowed formatting tags.
+    """
+    if not text:
+        return ""
+
+    # 1. Normalize linebreaks & br tags
+    text = re.sub(r"<\s*/?\s*br\s*/?\s*>", "<br/>", text, flags=re.IGNORECASE)
+
+    # 2. Strip disallowed HTML tags
+    disallowed = ["div", "span", "p", "ul", "ol", "li", "table", "tr", "td", "th", "tbody", "thead", "hr"]
+    for tag in disallowed:
+        text = re.sub(rf"<\s*/?\s*{tag}[^>]*>", "", text, flags=re.IGNORECASE)
+
+    # 3. Escape XML entities safely
+    parts = ALLOWED_TAG_PATTERN.split(text)
     escaped_parts = []
     for p in parts:
-        if p.startswith("<") and p.endswith(">"):
-            escaped_parts.append(p)
+        if ALLOWED_TAG_PATTERN.match(p):
+            # Normalize to strictly lowercase tag name for ReportLab
+            if p.lower() in ("<br>", "<br/>", "</br>"):
+                escaped_parts.append("<br/>")
+            else:
+                escaped_parts.append(p)
         else:
-            p = p.replace("&", "&amp;")
-            p = p.replace("<", "&lt;")
-            p = p.replace(">", "&gt;")
+            # Escape & (not already escaped), <, >
+            p = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+);)", "&amp;", p)
+            p = p.replace("<", "&lt;").replace(">", "&gt;")
             escaped_parts.append(p)
+
     return "".join(escaped_parts)
+
+
+# ─── Markdown Table Parser ───────────────────────────────────────────────────
+def parse_markdown_table(
+    table_text: str,
+    cell_style: ParagraphStyle,
+    header_style: ParagraphStyle,
+) -> Table | None:
+    lines = [l.strip() for l in table_text.strip().split("\n") if l.strip()]
+    if len(lines) < 2:
+        return None
+
+    rows = []
+    header_found = False
+
+    for line in lines:
+        # Skip separator line e.g. |---|---| or |:---|:---|
+        if re.match(r"^\|?[\s\-:|]+\|?$", line) and "-" in line:
+            header_found = True
+            continue
+
+        raw_cells = [c.strip() for c in line.strip("|").split("|")]
+        if not any(raw_cells):
+            continue
+
+        cell_paras = []
+        for c in raw_cells:
+            # Format inline styles
+            c = re.sub(r"\$([^$\n]+)\$", lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>", c)
+            c = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", c)
+            c = re.sub(r"\*(.+?)\*", r"<i>\1</i>", c)
+            clean_c = xml_escape(c)
+
+            current_style = header_style if (len(rows) == 0 and not header_found) else cell_style
+            cell_paras.append(Paragraph(clean_c, current_style))
+
+        if cell_paras:
+            rows.append(cell_paras)
+
+    if not rows:
+        return None
+
+    num_cols = max(len(r) for r in rows)
+    # Normalize rows to same column count
+    for r in rows:
+        while len(r) < num_cols:
+            r.append(Paragraph("", cell_style))
+
+    # Calculate column widths to fit total printable width of 504 pt
+    total_width = 504.0
+    if num_cols == 2:
+        col_widths = [150.0, 354.0]
+    elif num_cols == 3:
+        col_widths = [120.0, 192.0, 192.0]
+    elif num_cols == 4:
+        col_widths = [90.0, 138.0, 138.0, 138.0]
+    else:
+        col_widths = [total_width / num_cols] * num_cols
+
+    table = Table(rows, colWidths=col_widths)
+    table_style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1e293b")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]
+
+    # Alternating row background
+    for row_idx in range(1, len(rows)):
+        if row_idx % 2 == 1:
+            table_style_commands.append(
+                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#ffffff"))
+            )
+        else:
+            table_style_commands.append(
+                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f8fafc"))
+            )
+
+    table.setStyle(TableStyle(table_style_commands))
+    return table
 
 
 # ─── Parse Markdown into ReportLab Flowable Elements ─────────────────────────
@@ -222,6 +334,21 @@ def parse_markdown_to_flowables(
     )
 
     chunks = block_pattern.split(raw)
+
+    table_cell_style = ParagraphStyle(
+        "TableCell",
+        parent=body_style,
+        fontSize=8.5,
+        leading=11.5,
+    )
+    table_header_style = ParagraphStyle(
+        "TableHeader",
+        parent=heading_style,
+        fontSize=9,
+        leading=12,
+        fontName=FONT_BOLD,
+        textColor=colors.HexColor("#0f172a"),
+    )
 
     for chunk in chunks:
         chunk = chunk.strip()
@@ -266,6 +393,20 @@ def parse_markdown_to_flowables(
             if not para:
                 continue
 
+            # Check if this paragraph is a Markdown Table
+            lines = [l.strip() for l in para.split("\n") if l.strip()]
+            if len(lines) >= 2 and any("|" in l for l in lines) and any(re.match(r"^\|?[\s\-:|]+\|?$", l) for l in lines):
+                rendered_table = parse_markdown_table(
+                    table_text=para,
+                    cell_style=table_cell_style,
+                    header_style=table_header_style,
+                )
+                if rendered_table:
+                    flowables.append(Spacer(1, 4))
+                    flowables.append(rendered_table)
+                    flowables.append(Spacer(1, 6))
+                    continue
+
             # Convert inline math `$ ... $` or `\( ... \)` to Unicode math
             para = re.sub(
                 r"\$([^$\n]+)\$",
@@ -290,8 +431,8 @@ def parse_markdown_to_flowables(
 
             # Check for numbered item like "1. Union (A ∪ B)"
             if re.match(r"^\d+\.\s+[A-Za-z]", para) and len(para) < 80 and not ("." in para[4:]):
-                item_title = xml_escape(para)
-                item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", item_title)
+                item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
+                item_title = xml_escape(item_title)
                 flowables.append(Spacer(1, 5))
                 flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
                 flowables.append(Spacer(1, 2))
