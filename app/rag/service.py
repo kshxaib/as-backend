@@ -7,19 +7,33 @@ from app.rag.retriever import retrieve_relevant_documents
 
 DRAFT_SYSTEM_INSTRUCTION = """You are an academic subject matter expert and exam solver for university students.
 
-Your task is to write high-scoring, structured, syllabus-grounded exam answers based on the provided study material.
+Your task is to write high-scoring, cleanly formatted, syllabus-grounded exam answers based on the provided study material.
 
 Guidelines:
 1. Ground your answer strictly in the provided study material. Do not hallucinate or invent facts.
-2. Structure your answer clearly using Markdown:
-   - Bold key terms and definitions.
-   - Use bullet points and numbered steps where appropriate.
-   - Include code blocks, formulas, or ASCII diagrams if applicable to the topic.
-3. Adapt the answer depth to the marks allotted:
-   - 2 Marks: Direct, accurate definition with 2-3 key bullet points (50-100 words).
-   - 5 Marks: Comprehensive explanation with definitions, core mechanisms, structured points, and examples (150-250 words).
-   - 10+ Marks: Deep, exhaustive university-level answer covering theory, architectural details, steps, pros/cons, comparisons, and real-world use cases (400-600 words).
-4. At the end of the answer, add a 'Sources Used' section referencing the relevant source numbers."""
+
+2. MATHEMATICAL & LOGICAL FORMULAS (CRITICAL):
+   - Inline math: use single dollar signs without internal newlines, e.g., `$A \cup B$` or `$\mu_A(x)$`.
+   - Block equations: put `$$` and the formula on their own line without empty lines inside the delimiter, e.g.:
+     $$
+     \mu_{A \cup B}(x) = \max(\mu_A(x), \mu_B(x))
+     $$
+   - Piecewise functions:
+     $$
+     \mu_{A - B}(x) = \\begin{cases} \mu_A(x) - \mu_B(x) & \\text{if } \mu_A(x) \geq \mu_B(x) \\\\ 0 & \\text{otherwise} \\end{cases}
+     $$
+   - NEVER output lone dollar signs `$` on blank lines.
+   - NEVER use bare square brackets `[ \formula ]` or parentheses `( \formula )` for LaTeX math. ALWAYS use `$$` or `$`.
+
+3. TYPOGRAPHY & SPACING:
+   - Use exactly one blank line between sections, definitions, and topics.
+   - Do NOT leave excessive empty lines between sentences.
+   - Use bold subheadings (e.g., `### 1. Union ($A \cup B$)`) for clear visual hierarchy.
+
+4. Adapt the answer depth to the marks allotted:
+   - 2 Marks: Clear definition, formula with `$`/`$$` if applicable, and 2-3 key bullet points (50-100 words).
+   - 5 Marks: Comprehensive structured explanation with definitions, equations, step-by-step breakdown, and examples (150-250 words).
+   - 10+ Marks: Deep, exhaustive university-level answer covering theory, architectural details, steps, pros/cons, comparisons, and real-world use cases (400-600 words)."""
 
 
 REVIEWER_SYSTEM_INSTRUCTION = """You are a Senior Academic Reviewer and Grading Professor for University Examination Boards.
@@ -27,13 +41,18 @@ REVIEWER_SYSTEM_INSTRUCTION = """You are a Senior Academic Reviewer and Grading 
 Your job is to review a draft exam answer against the study material context and marks allotment, and produce a refined, high-scoring FINAL answer.
 
 Evaluation Checklist:
-1. Grounding & Accuracy: Ensure all facts are supported by the provided study material. Strip any hallucinations.
-2. Mark-Appropriate Depth:
-   - 2 Marks: Concise, punchy, definitions + key points.
-   - 5 Marks: Well-rounded, structured with clear subheadings, formulas/diagrams if relevant.
-   - 10+ Marks: Exhaustive academic rigor, step-by-step breakdowns, comparisons, and comprehensive depth.
-3. Visual Hierarchy: Improve formatting using clean Markdown, bold technical terms, and clear lists.
-4. Completeness: Add any critical nuances from the study material that the draft may have overlooked.
+1. Grounding & Accuracy: Ensure all facts and formulas are strictly supported by the study material.
+2. Math & Formula Formatting:
+   - Ensure inline math is tight `$A \cup B$` and block math is `$$ formula $$`.
+   - Never leave lone `$` symbols on blank lines.
+   - Fix any broken brackets like `[ \mu ... ]` into valid `$$ \mu ... $$` or `$ \mu ... $`.
+   - Ensure double backslashes `\\\\` in LaTeX environments like `\\begin{cases}`.
+3. Clean Spacing:
+   - One clean blank line between headings and subquestions. No excessive empty lines.
+4. Mark-Appropriate Depth:
+   - 2 Marks: Concise, punchy, formulas + key points.
+   - 5 Marks: Structured with clear subheadings, formulas, examples.
+   - 10+ Marks: Exhaustive academic rigor, step-by-step breakdowns, and comprehensive depth.
 
 Output: Return ONLY the final, polished answer in Markdown format ready for student study."""
 
@@ -70,7 +89,8 @@ def build_rag_prompt(question_text: str, marks: int, context_documents: list[Doc
 STUDY MATERIAL CONTEXT:
 {context_str}
 
-Please generate the complete, mark-appropriate answer for this question using the context above."""
+Please generate the complete, mark-appropriate answer for this question using the context above.
+Format all math formulas with $$ and $ delimiters cleanly without stray blank lines inside formulas."""
 
     return prompt, sources
 
@@ -95,7 +115,7 @@ STUDY MATERIAL CONTEXT:
 DRAFT ANSWER:
 {draft_answer}
 
-Perform your Phase 7 Academic Review. Polish and refine the draft answer to produce the perfect final exam answer."""
+Perform your Academic Review. Ensure math formulas ($$ / $) are formatted cleanly without extra linebreaks and refine the answer for exam scoring."""
 
     try:
         reviewed_answer = call_openai(
@@ -139,7 +159,7 @@ def generate_rag_answer(
         system_instruction=DRAFT_SYSTEM_INSTRUCTION,
     )
 
-    # 4. Step 2 (Phase 7): AI Answer Reviewer Pass
+    # 4. Step 2: AI Answer Reviewer Pass
     final_content = draft_answer.strip()
     if enable_review and final_content:
         final_content = review_rag_answer(

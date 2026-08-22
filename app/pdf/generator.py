@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import re
 from datetime import datetime
 
@@ -13,9 +14,35 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     HRFlowable,
-    KeepTogether,
 )
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
+# ─── Register Modern Unicode TrueType Fonts ──────────────────────────────────
+FONT_REGULAR = "Helvetica"
+FONT_BOLD = "Helvetica-Bold"
+
+try:
+    windows_fonts = "C:/Windows/Fonts"
+    segoe_reg = os.path.join(windows_fonts, "segoeui.ttf")
+    segoe_bold = os.path.join(windows_fonts, "segoeuib.ttf")
+    arial_reg = os.path.join(windows_fonts, "arial.ttf")
+    arial_bold = os.path.join(windows_fonts, "arialbd.ttf")
+
+    if os.path.exists(segoe_reg) and os.path.exists(segoe_bold):
+        pdfmetrics.registerFont(TTFont("ModernAcademic", segoe_reg))
+        pdfmetrics.registerFont(TTFont("ModernAcademic-Bold", segoe_bold))
+        FONT_REGULAR = "ModernAcademic"
+        FONT_BOLD = "ModernAcademic-Bold"
+    elif os.path.exists(arial_reg) and os.path.exists(arial_bold):
+        pdfmetrics.registerFont(TTFont("ModernAcademic", arial_reg))
+        pdfmetrics.registerFont(TTFont("ModernAcademic-Bold", arial_bold))
+        FONT_REGULAR = "ModernAcademic"
+        FONT_BOLD = "ModernAcademic-Bold"
+except Exception as font_err:
+    print(f"Warning: Fallback to default Helvetica: {font_err}")
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -37,7 +64,7 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_decorations(self, page_count):
         self.saveState()
-        self.setFont("Helvetica", 8)
+        self.setFont(FONT_REGULAR, 8)
         self.setFillColor(colors.HexColor("#64748b"))
 
         # Header (pages 2+)
@@ -62,22 +89,227 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
-def clean_markdown_for_pdf(text: str) -> str:
-    if not text:
+# ─── LaTeX to Unicode Mathematical Conversion ─────────────────────────────────
+def latex_to_unicode(latex_str: str) -> str:
+    if not latex_str:
         return ""
 
-    # Convert markdown headers ## to bold text
-    text = re.sub(r"^#{1,6}\s*(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
-    # Convert **bold** to <b>bold</b>
-    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
-    # Convert *italic* to <i>italic</i>
-    text = re.sub(r"\*(.+?)\*", r"<i>\1</i>", text)
-    # Replace newlines with <br/>
-    text = text.replace("\n\n", "<br/><br/>").replace("\n", "<br/>")
+    s = latex_str.strip()
 
-    return text
+    # Remove outer math delimiters
+    if s.startswith("$$") and s.endswith("$$"):
+        s = s[2:-2].strip()
+    elif s.startswith("$") and s.endswith("$"):
+        s = s[1:-1].strip()
+    elif s.startswith("\\[") and s.endswith("\\]"):
+        s = s[2:-2].strip()
+    elif s.startswith("\\(") and s.endswith("\\)"):
+        s = s[2:-2].strip()
+
+    # Handle piecewise / cases environment
+    if "\\begin{cases}" in s:
+        inner = re.search(r"\\begin\{cases\}(.*?)\\end\{cases\}", s, re.DOTALL)
+        if inner:
+            cases_content = inner.group(1).strip()
+            lines = [l.strip() for l in re.split(r"\\\\|\\\\\\\\", cases_content) if l.strip()]
+            formatted_lines = []
+            for l in lines:
+                parts = [p.strip() for p in l.split("&") if p.strip()]
+                clean_parts = "   ".join(parts)
+                formatted_lines.append(clean_parts)
+            cases_str = "{\n  " + "\n  ".join(formatted_lines) + "\n}"
+            s = s.replace(inner.group(0), cases_str)
+
+    replacements = [
+        (r"\\mu", "μ"),
+        (r"\\cup", " ∪ "),
+        (r"\\cap", " ∩ "),
+        (r"\\neg", "¬"),
+        (r"\\subset", " ⊂ "),
+        (r"\\subseteq", " ⊆ "),
+        (r"\\in", " ∈ "),
+        (r"\\notin", " ∉ "),
+        (r"\\emptyset", "∅"),
+        (r"\\geq", " ≥ "),
+        (r"\\ge", " ≥ "),
+        (r"\\leq", " ≤ "),
+        (r"\\le", " ≤ "),
+        (r"\\neq", " ≠ "),
+        (r"\\ne", " ≠ "),
+        (r"\\times", " × "),
+        (r"\\div", " ÷ "),
+        (r"\\pm", " ± "),
+        (r"\\approx", " ≈ "),
+        (r"\\infty", "∞"),
+        (r"\\alpha", "α"),
+        (r"\\beta", "β"),
+        (r"\\gamma", "γ"),
+        (r"\\delta", "δ"),
+        (r"\\theta", "θ"),
+        (r"\\sigma", "σ"),
+        (r"\\lambda", "λ"),
+        (r"\\pi", "π"),
+        (r"\\sum", "Σ"),
+        (r"\\prod", "Π"),
+        (r"\\int", "∫"),
+        (r"\\rightarrow", " → "),
+        (r"\\to", " → "),
+        (r"\\Rightarrow", " ⇒ "),
+        (r"\\max", "max"),
+        (r"\\min", "min"),
+        (r"\\log", "log"),
+        (r"\\ln", "ln"),
+        (r"\\text\{([^}]+)\}", r"\1"),
+        (r"\\textbf\{([^}]+)\}", r"<b>\1</b>"),
+        (r"\\textit\{([^}]+)\}", r"<i>\1</i>"),
+        (r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1 / \2)"),
+        (r"\\sqrt\{([^}]+)\}", r"√(\1)"),
+        (r"_\{([^}]+)\}", r"_(\1)"),
+        (r"\^\{([^}]+)\}", r"^(\1)"),
+        (r"\\cdot", "·"),
+        (r"\\quad", " "),
+        (r"\\qquad", "   "),
+        (r"\\left", ""),
+        (r"\\right", ""),
+        (r"\\{", "{"),
+        (r"\\}", "}"),
+        (r"\\\\", "\n"),
+        (r"\\", ""),
+    ]
+
+    for pat, rep in replacements:
+        s = re.sub(pat, rep, s)
+
+    # Clean up multiple spaces
+    s = re.sub(r"[ \t]+", " ", s)
+    return s.strip()
 
 
+# ─── XML Safe Text Cleaner for ReportLab ──────────────────────────────────────
+def xml_escape(text: str) -> str:
+    # Escape &, <, and > safely without destroying ReportLab tags <b>, <i>, <br/>
+    parts = re.split(r"(<[^>]+>)", text)
+    escaped_parts = []
+    for p in parts:
+        if p.startswith("<") and p.endswith(">"):
+            escaped_parts.append(p)
+        else:
+            p = p.replace("&", "&amp;")
+            p = p.replace("<", "&lt;")
+            p = p.replace(">", "&gt;")
+            escaped_parts.append(p)
+    return "".join(escaped_parts)
+
+
+# ─── Parse Markdown into ReportLab Flowable Elements ─────────────────────────
+def parse_markdown_to_flowables(
+    text: str,
+    body_style: ParagraphStyle,
+    heading_style: ParagraphStyle,
+    formula_style: ParagraphStyle,
+) -> list:
+    flowables = []
+    if not text:
+        return flowables
+
+    # 1. Normalize linebreaks and strip isolated dollars
+    raw = text.replace("\r\n", "\n").strip()
+
+    # Split text into blocks (paragraphs, formulas, headings)
+    block_pattern = re.compile(
+        r"(\$\$(?:[^\$]+?)\$\$|\\\[(?:[\s\S]+?)\\\]|\[\s*\\(?:mu|max|min|begin|neg|text|sum|frac|sigma)[^\]]+?\])",
+        re.DOTALL,
+    )
+
+    chunks = block_pattern.split(raw)
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+
+        # Check if chunk is a display math formula
+        if (
+            chunk.startswith("$$")
+            or chunk.startswith("\\[")
+            or (chunk.startswith("[") and ("\\mu" in chunk or "\\begin" in chunk or "\\max" in chunk))
+        ):
+            unicode_math = latex_to_unicode(chunk)
+            formatted_math = xml_escape(unicode_math).replace("\n", "<br/>")
+
+            math_p = Paragraph(f"<b>{formatted_math}</b>", formula_style)
+            # Wrap in highlighted formula table
+            formula_table = Table(
+                [[math_p]],
+                colWidths=[504],
+            )
+            formula_table.setStyle(
+                TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#818cf8")),
+                    ("LINELEFT", (0, 0), (-1, -1), 3.5, colors.HexColor("#4f46e5")),
+                    ("PADDING", (0, 0), (-1, -1), 7),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ])
+            )
+            flowables.append(Spacer(1, 4))
+            flowables.append(formula_table)
+            flowables.append(Spacer(1, 6))
+            continue
+
+        # Regular text chunk — split by paragraphs
+        paragraphs = chunk.split("\n\n")
+
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+
+            # Convert inline math `$ ... $` or `\( ... \)` to Unicode math
+            para = re.sub(
+                r"\$([^$\n]+)\$",
+                lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
+                para,
+            )
+            para = re.sub(
+                r"\\\((.+?)\\\)",
+                lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
+                para,
+            )
+
+            # Check if this paragraph is a Markdown heading (e.g. ### 1. Union)
+            if re.match(r"^#{1,6}\s+", para):
+                heading_text = re.sub(r"^#{1,6}\s*", "", para).strip()
+                heading_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", heading_text)
+                heading_text = xml_escape(heading_text)
+                flowables.append(Spacer(1, 6))
+                flowables.append(Paragraph(heading_text, heading_style))
+                flowables.append(Spacer(1, 3))
+                continue
+
+            # Check for numbered item like "1. Union (A ∪ B)"
+            if re.match(r"^\d+\.\s+[A-Za-z]", para) and len(para) < 80 and not ("." in para[4:]):
+                item_title = xml_escape(para)
+                item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", item_title)
+                flowables.append(Spacer(1, 5))
+                flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
+                flowables.append(Spacer(1, 2))
+                continue
+
+            # Standard paragraph formatting
+            para = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
+            para = re.sub(r"\*(.+?)\*", r"<i>\1</i>", para)
+            para = re.sub(r"^\s*[-*•]\s+(.+)$", r"• \1", para, flags=re.MULTILINE)
+
+            para_html = xml_escape(para).replace("\n", "<br/>")
+            flowables.append(Paragraph(para_html, body_style))
+            flowables.append(Spacer(1, 4))
+
+    return flowables
+
+
+# ─── Main PDF Generation Function ─────────────────────────────────────────────
 def generate_solved_question_bank_pdf(
     question_bank_name: str,
     subject: str,
@@ -95,22 +327,22 @@ def generate_solved_question_bank_pdf(
 
     styles = getSampleStyleSheet()
 
-    # Custom styles
+    # ── Custom Typography Styles ─────────────────────────────────────────────
     brand_style = ParagraphStyle(
         "BrandStyle",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=12,
-        leading=14,
+        fontName=FONT_BOLD,
+        fontSize=11,
+        leading=13,
         textColor=colors.HexColor("#4f46e5"),
     )
 
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Title"],
-        fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
+        fontName=FONT_BOLD,
+        fontSize=18,
+        leading=22,
         textColor=colors.HexColor("#0f172a"),
         alignment=0,
     )
@@ -118,43 +350,62 @@ def generate_solved_question_bank_pdf(
     subtitle_style = ParagraphStyle(
         "SubtitleStyle",
         parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=10,
-        leading=14,
+        fontName=FONT_REGULAR,
+        fontSize=9.5,
+        leading=13,
         textColor=colors.HexColor("#475569"),
     )
 
     disclaimer_style = ParagraphStyle(
         "DisclaimerStyle",
         parent=styles["Normal"],
-        fontName="Helvetica-Oblique",
+        fontName=FONT_REGULAR,
         fontSize=8,
         leading=11,
-        textColor=colors.HexColor("#dc2626"),
+        textColor=colors.HexColor("#b91c1c"),
     )
 
     question_title_style = ParagraphStyle(
         "QuestionTitleStyle",
         parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
-        fontSize=11,
-        leading=15,
+        fontName=FONT_BOLD,
+        fontSize=10.5,
+        leading=14,
         textColor=colors.HexColor("#1e1b4b"),
+    )
+
+    answer_heading_style = ParagraphStyle(
+        "AnswerHeadingStyle",
+        parent=styles["Normal"],
+        fontName=FONT_BOLD,
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#312e81"),
     )
 
     answer_body_style = ParagraphStyle(
         "AnswerBodyStyle",
         parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=9.5,
-        leading=14,
+        fontName=FONT_REGULAR,
+        fontSize=9,
+        leading=13.5,
         textColor=colors.HexColor("#1e293b"),
+    )
+
+    formula_style = ParagraphStyle(
+        "FormulaStyle",
+        parent=styles["Normal"],
+        fontName=FONT_BOLD,
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor("#1e1b4b"),
+        alignment=1,  # Center aligned
     )
 
     source_style = ParagraphStyle(
         "SourceStyle",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=FONT_REGULAR,
         fontSize=8,
         leading=11,
         textColor=colors.HexColor("#0284c7"),
@@ -164,12 +415,12 @@ def generate_solved_question_bank_pdf(
 
     # 1. Header Banner
     story.append(Paragraph("ACADEMICSTACK SOLUTIONS", brand_style))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 3))
     story.append(Paragraph(f"{subject} — {question_bank_name}", title_style))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 3))
     story.append(
         Paragraph(
-            f"Generated on {datetime.utcnow().strftime('%B %d, %Y')} • RAG Grounded Answer Set",
+            f"Generated on {datetime.utcnow().strftime('%B %d, %Y')} • RAG Grounded & AI Verified Answer Set",
             subtitle_style,
         )
     )
@@ -178,7 +429,7 @@ def generate_solved_question_bank_pdf(
     # 2. Disclaimer Callout Box
     disclaimer_html = (
         "<b>Notice:</b> This document contains AI-generated examination solutions grounded in verified study "
-        "materials. It is designed to assist exam preparation and conceptual understanding."
+        "materials. It is designed to assist exam preparation, conceptual clarity, and revision."
     )
     disclaimer_table = Table(
         [[Paragraph(disclaimer_html, disclaimer_style)]],
@@ -188,12 +439,12 @@ def generate_solved_question_bank_pdf(
         TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef2f2")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#fca5a5")),
-            ("PADDING", (0, 0), (-1, -1), 8),
+            ("PADDING", (0, 0), (-1, -1), 7),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ])
     )
     story.append(disclaimer_table)
-    story.append(Spacer(1, 14))
+    story.append(Spacer(1, 10))
 
     # 3. Stats Strip
     total_q = len(answers)
@@ -208,13 +459,13 @@ def generate_solved_question_bank_pdf(
         TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-            ("PADDING", (0, 0), (-1, -1), 6),
+            ("PADDING", (0, 0), (-1, -1), 5),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ])
     )
     story.append(stats_table)
-    story.append(Spacer(1, 18))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=14))
+    story.append(Spacer(1, 14))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=12))
 
     # 4. Answers List
     for index, ans in enumerate(answers, start=1):
@@ -233,52 +484,62 @@ def generate_solved_question_bank_pdf(
             sources_list = raw_sources
 
         # Question Header Box
-        q_header_text = f"<b>Q{q_num}. {q_text}</b>"
+        q_header_text = f"<b>Q{q_num}. {xml_escape(q_text)}</b>"
         q_marks_text = f"<b>[{marks} Marks]</b>"
 
         q_table = Table(
             [[
                 Paragraph(q_header_text, question_title_style),
-                Paragraph(q_marks_text, ParagraphStyle("MarkRight", parent=question_title_style, alignment=2, textColor=colors.HexColor("#4f46e5"))),
+                Paragraph(
+                    q_marks_text,
+                    ParagraphStyle(
+                        "MarkRight",
+                        parent=question_title_style,
+                        alignment=2,
+                        textColor=colors.HexColor("#4f46e5"),
+                    ),
+                ),
             ]],
             colWidths=[420, 84],
         )
         q_table.setStyle(
             TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eef2ff")),
-                ("PADDING", (0, 0), (-1, -1), 7),
+                ("PADDING", (0, 0), (-1, -1), 6),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d2fe")),
             ])
         )
 
-        formatted_content = clean_markdown_for_pdf(content)
-        answer_paragraph = Paragraph(formatted_content, answer_body_style)
+        story.append(q_table)
+        story.append(Spacer(1, 6))
+
+        # Parse structured answer content and formula boxes
+        answer_flowables = parse_markdown_to_flowables(
+            content,
+            body_style=answer_body_style,
+            heading_style=answer_heading_style,
+            formula_style=formula_style,
+        )
+        story.extend(answer_flowables)
 
         # Sources footer
-        source_items = []
         if sources_list:
             source_labels = []
             for s in sources_list:
                 res = s.get("resource_name", "Material")
                 p = s.get("page", "")
                 ch = s.get("chapter", "")
-                source_labels.append(f"{res} (Pg {p})" if p and p != "N/A" else res)
-            source_text = f"<b>Sources Cited:</b> {', '.join(source_labels)}"
-            source_items.append(Paragraph(source_text, source_style))
+                label = f"{res} (Pg {p})" if p and p != "N/A" else res
+                if ch and ch != "General":
+                    label += f" • {ch}"
+                source_labels.append(label)
+            source_text = f"<b>Verified Sources:</b> {', '.join(source_labels)}"
+            story.append(Paragraph(xml_escape(source_text), source_style))
+            story.append(Spacer(1, 4))
 
-        answer_elements = [
-            q_table,
-            Spacer(1, 8),
-            answer_paragraph,
-            Spacer(1, 6),
-        ]
-        if source_items:
-            answer_elements.extend(source_items)
-        answer_elements.append(Spacer(1, 14))
-        answer_elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=14))
-
-        story.append(KeepTogether(answer_elements))
+        story.append(Spacer(1, 10))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=12))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)

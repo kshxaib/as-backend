@@ -2,9 +2,9 @@ import os
 import uuid
 import tempfile
 import requests
+import fitz  # PyMuPDF direct
 
 from fastapi import HTTPException
-from langchain_community.document_loaders import PyMuPDFLoader
 from sqlalchemy.orm import Session
 
 from app.db.models import QuestionBank, Question
@@ -83,20 +83,21 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         # Step 4 — Download PDF.
         download_pdf(url=question_bank.cloudinary_url, destination=temporary_pdf_path)
 
-        # Step 5 — Extract text using PyMuPDF.
-        loader = PyMuPDFLoader(temporary_pdf_path)
-        documents = loader.load()
-
-        if not documents:
-            raise ValueError("No text could be extracted from the PDF.")
-
+        # Step 5 — Extract text using PyMuPDF (layout-preserving mode).
+        # We use fitz directly instead of LangChain's loader so that
+        # columnar layouts (question text | marks column) are preserved.
+        doc = fitz.open(temporary_pdf_path)
         full_text = ""
-        for document in documents:
-            if document.page_content.strip():
-                full_text += document.page_content + "\n\n"
+        for page in doc:
+            # "text" flag with "blocks" preserves reading order and column structure
+            page_text = page.get_text("text")
+            if page_text.strip():
+                full_text += page_text + "\n\n--- PAGE BREAK ---\n\n"
+        doc.close()
 
         if not full_text.strip():
             raise ValueError("PDF produced no readable text.")
+
 
         # Step 6 — Send text to OpenAI for question extraction.
         parsed_questions = parse_questions(
@@ -113,10 +114,13 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         ).delete()
 
         # Step 8 — Store extracted questions.
-        for parsed in parsed_questions:
+        for idx, parsed in enumerate(parsed_questions, start=1):
+            q_num = parsed.get("question_number")
+            if not q_num or q_num <= 0:
+                q_num = idx
             question = Question(
                 question_bank_id=question_bank.id,
-                question_number=parsed["question_number"],
+                question_number=q_num,
                 question_text=parsed["question_text"],
                 marks=parsed["marks"],
                 marks_source=parsed["marks_source"],
