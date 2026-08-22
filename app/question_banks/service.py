@@ -3,13 +3,14 @@ import uuid
 import tempfile
 import requests
 
+from fastapi import HTTPException
 from langchain_community.document_loaders import PyMuPDFLoader
 from sqlalchemy.orm import Session
 
-from app.db.models import QuestionBank, Question, User
+from app.db.models import QuestionBank, Question
 from app.parsing.question_parser import parse_questions
-from app.storage.cloudinary import upload_pdf, delete_pdf
-from app.utils.encryption import decrypt_api_key
+from app.storage.cloudinary import upload_pdf
+from app.users.service import get_user_openai_key
 
 
 # Upload a question bank PDF to Cloudinary and store metadata.
@@ -55,7 +56,6 @@ def create_question_bank(
 
 # Download a PDF from Cloudinary.
 def download_pdf(url: str, destination: str) -> None:
-
     response = requests.get(url, timeout=120)
     response.raise_for_status()
 
@@ -65,39 +65,25 @@ def download_pdf(url: str, destination: str) -> None:
 
 # Extract questions from a question bank PDF using LLM.
 def extract_questions(db: Session, question_bank: QuestionBank) -> int:
+    # Step 1 — Check OpenAI API key first
+    openai_api_key = get_user_openai_key(db=db, user_id=question_bank.user_id)
 
-    # Step 1 — Update status.
+    # Step 2 — Update status.
     question_bank.status = "extracting"
-
     db.commit()
     db.refresh(question_bank)
 
     temporary_pdf_path = None
 
     try:
-        # Step 2 — Get the owner.
-        user = (
-            db.query(User)
-            .filter(User.id == question_bank.user_id)
-            .first()
-        )
-
-        if user is None:
-            raise ValueError(
-                "Question bank owner was not found."
-            )
-
-        # Step 3 — Decrypt OpenAI API key.
-        openai_api_key = decrypt_api_key(user.openai_api_key_encrypted)
-
-        # Step 4 — Create temporary PDF.
+        # Step 3 — Create temporary PDF.
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temporary_file:
             temporary_pdf_path = temporary_file.name
 
-        # Step 5 — Download PDF.
+        # Step 4 — Download PDF.
         download_pdf(url=question_bank.cloudinary_url, destination=temporary_pdf_path)
 
-        # Step 6 — Extract text using PyMuPDF.
+        # Step 5 — Extract text using PyMuPDF.
         loader = PyMuPDFLoader(temporary_pdf_path)
         documents = loader.load()
 
@@ -105,7 +91,6 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
             raise ValueError("No text could be extracted from the PDF.")
 
         full_text = ""
-
         for document in documents:
             if document.page_content.strip():
                 full_text += document.page_content + "\n\n"
@@ -113,7 +98,7 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         if not full_text.strip():
             raise ValueError("PDF produced no readable text.")
 
-        # Step 7 — Send text to OpenAI for question extraction.
+        # Step 6 — Send text to OpenAI for question extraction.
         parsed_questions = parse_questions(
             api_key=openai_api_key,
             text=full_text,
@@ -122,12 +107,12 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         if not parsed_questions:
             raise ValueError("LLM extracted zero questions.")
 
-        # Step 8 — Delete old questions if re-extracting.
+        # Step 7 — Delete old questions if re-extracting.
         db.query(Question).filter(
             Question.question_bank_id == question_bank.id
         ).delete()
 
-        # Step 9 — Store extracted questions.
+        # Step 8 — Store extracted questions.
         for parsed in parsed_questions:
             question = Question(
                 question_bank_id=question_bank.id,
@@ -136,16 +121,19 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
                 marks=parsed["marks"],
                 marks_source=parsed["marks_source"],
             )
-
             db.add(question)
 
-        # Step 10 — Mark extraction complete.
+        # Step 9 — Mark extraction complete.
         question_bank.status = "extracted"
-
         db.commit()
         db.refresh(question_bank)
 
         return len(parsed_questions)
+
+    except HTTPException:
+        question_bank.status = "uploaded"
+        db.commit()
+        raise
 
     except Exception:
         question_bank.status = "extraction_failed"
@@ -160,9 +148,7 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
 
 # Fetch multiple question banks (optionally filtered by user_id).
 def get_question_banks(db: Session, user_id: int | None = None) -> list[QuestionBank]:
-
     query = db.query(QuestionBank)
-
     if user_id is not None:
         query = query.filter(QuestionBank.user_id == user_id)
 
@@ -175,7 +161,6 @@ def get_question_banks(db: Session, user_id: int | None = None) -> list[Question
 
 # Fetch a single question bank.
 def get_question_bank(db: Session, question_bank_id: int) -> QuestionBank | None:
-
     return (
         db.query(QuestionBank)
         .filter(QuestionBank.id == question_bank_id)
@@ -185,7 +170,6 @@ def get_question_bank(db: Session, question_bank_id: int) -> QuestionBank | None
 
 # Fetch all questions for a question bank.
 def get_questions(db: Session, question_bank_id: int) -> list[Question]:
-
     return (
         db.query(Question)
         .filter(Question.question_bank_id == question_bank_id)
@@ -202,7 +186,6 @@ def add_question_to_bank(
     marks: int,
     question_number: int | None = None,
 ) -> Question:
-
     if question_number is None:
         last_question = (
             db.query(Question)
@@ -225,4 +208,3 @@ def add_question_to_bank(
     db.refresh(question)
 
     return question
-

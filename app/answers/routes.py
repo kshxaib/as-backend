@@ -1,10 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.answers.schemas import AnswerResponse, AnswerSetProgressResponse, AnswerSetResponse, GenerateAnswerSetRequest
 from app.answers.service import format_answer_for_response, generate_answer_set, get_answer_set, get_answers_for_set, retry_single_answer
 from app.db.database import get_db
-from app.db.models import AnswerSet
+from app.db.models import AnswerSet, QuestionBank
+from app.pdf.generator import generate_solved_question_bank_pdf
 
 router = APIRouter(
     prefix="/api",
@@ -38,6 +39,8 @@ def generate_answer_set_endpoint(
             "updated_at": answer_set.updated_at,
             "answers": formatted_answers,
         }
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Answer generation failed: {str(error)}")
 
@@ -66,6 +69,40 @@ def get_answer_set_endpoint(
         "updated_at": answer_set.updated_at,
         "answers": formatted_answers,
     }
+
+
+# Download Solved Question Bank as PDF (Phase 8)
+@router.get("/answer-sets/{answer_set_id}/pdf")
+def download_answer_set_pdf_endpoint(
+    answer_set_id: int,
+    db: Session = Depends(get_db),
+):
+    answer_set = get_answer_set(db=db, answer_set_id=answer_set_id)
+    if not answer_set:
+        raise HTTPException(status_code=404, detail="Answer Set not found.")
+
+    qb = db.query(QuestionBank).filter(QuestionBank.id == answer_set.question_bank_id).first()
+    qb_name = qb.name if qb else "Solved Question Bank"
+    subject = qb.subject if qb else "Academic Subject"
+
+    answers = get_answers_for_set(db=db, answer_set_id=answer_set.id)
+    formatted_answers = [format_answer_for_response(a) for a in answers]
+
+    pdf_bytes = generate_solved_question_bank_pdf(
+        question_bank_name=qb_name,
+        subject=subject,
+        answers=formatted_answers,
+    )
+
+    safe_filename = f"AcademicStack_{subject.replace(' ', '_')}_{qb_name.replace(' ', '_')}_Solved.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+        },
+    )
 
 
 # Check generation progress
@@ -101,6 +138,8 @@ def retry_answer_endpoint(
     try:
         ans = retry_single_answer(db=db, answer_id=answer_id)
         return format_answer_for_response(ans)
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"Retry failed: {str(error)}")
 

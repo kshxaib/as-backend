@@ -40,6 +40,8 @@ def index_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
             "chunks_indexed": chunk_count,
         }
 
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(
             status_code=500,

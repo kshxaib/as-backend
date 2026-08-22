@@ -14,15 +14,27 @@ class User(Base):
         primary_key=True,
         index=True,
     )
+
+    username = Column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    password_hash = Column(
+        String(255),
+        nullable=False,
+    )
  
     name = Column(
-        String,
+        String(100),
         nullable=False,
     )
 
     openai_api_key_encrypted = Column(
         String,
-        nullable=False,
+        nullable=True,
     )
 
     created_at = Column(
@@ -266,6 +278,17 @@ class AnswerSet(Base):
         Integer,
         nullable=False,
         default=0,
+    )
+
+    visibility = Column(
+        String(20),
+        nullable=False,
+        default="private",
+    )
+
+    pdf_url = Column(
+        String,
+        nullable=True,
     )
 
     created_at = Column(

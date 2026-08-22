@@ -23,8 +23,6 @@ def create_question_bank_endpoint(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-
-    # Validate file.
     if not file.filename:
         raise HTTPException(
             status_code=400,
@@ -52,9 +50,7 @@ def create_question_bank_endpoint(
 # Fetch all question banks (optionally filtered by user_id).
 @router.get("", response_model=QuestionBankListResponse)
 def list_question_banks_endpoint(user_id: int | None = None, db: Session = Depends(get_db)):
-
     question_banks = get_question_banks(db=db, user_id=user_id)
-
     return {
         "question_banks": question_banks,
     }
@@ -63,7 +59,6 @@ def list_question_banks_endpoint(user_id: int | None = None, db: Session = Depen
 # Fetch a single question bank.
 @router.get("/{question_bank_id}", response_model=QuestionBankResponse)
 def get_question_bank_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
-
     question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
 
     if question_bank is None:
@@ -75,11 +70,9 @@ def get_question_bank_endpoint(question_bank_id: int, db: Session = Depends(get_
     return question_bank
 
 
-
 # Trigger LLM question extraction.
 @router.post("/{question_bank_id}/extract")
 def extract_questions_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
-
     question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
 
     if question_bank is None:
@@ -87,13 +80,6 @@ def extract_questions_endpoint(question_bank_id: int, db: Session = Depends(get_
             status_code=404,
             detail="Question bank not found.",
         )
-
-    if question_bank.status == "extracted":
-        return {
-            "message": "Questions already extracted. Call again to re-extract.",
-            "question_bank_id": question_bank.id,
-            "status": question_bank.status,
-        }
 
     try:
         question_count = extract_questions(
@@ -108,6 +94,8 @@ def extract_questions_endpoint(question_bank_id: int, db: Session = Depends(get_
             "questions_extracted": question_count,
         }
 
+    except HTTPException:
+        raise
     except Exception as error:
         raise HTTPException(
             status_code=500,
@@ -118,7 +106,6 @@ def extract_questions_endpoint(question_bank_id: int, db: Session = Depends(get_
 # Get extracted questions for a question bank.
 @router.get("/{question_bank_id}/questions", response_model=QuestionListResponse)
 def get_questions_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
-
     question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
 
     if question_bank is None:
@@ -141,7 +128,6 @@ def add_question_endpoint(
     question_data: QuestionCreate,
     db: Session = Depends(get_db),
 ):
-
     question_bank = get_question_bank(db=db, question_bank_id=question_bank_id)
 
     if question_bank is None:
@@ -159,4 +145,3 @@ def add_question_endpoint(
     )
 
     return question
-
