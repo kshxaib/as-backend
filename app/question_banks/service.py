@@ -2,7 +2,7 @@ import os
 import uuid
 import tempfile
 import requests
-import fitz  # PyMuPDF direct
+import pymupdf as fitz
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -10,15 +10,13 @@ from sqlalchemy.orm import Session
 from app.db.models import QuestionBank, Question
 from app.parsing.question_parser import parse_questions
 from app.storage.cloudinary import upload_pdf
-from app.users.service import get_user_openai_key
+from app.users.service import get_user_all_keys
 
 
-# Upload a question bank PDF to Cloudinary and store metadata.
 def create_question_bank(
     db: Session, user_id: int, name: str, subject: str,
     resource_ids: str, file,
 ) -> QuestionBank:
-
     safe_name = (
         name.strip()
         .lower()
@@ -54,7 +52,6 @@ def create_question_bank(
     return question_bank
 
 
-# Download a PDF from Cloudinary.
 def download_pdf(url: str, destination: str) -> None:
     response = requests.get(url, timeout=120)
     response.raise_for_status()
@@ -63,12 +60,16 @@ def download_pdf(url: str, destination: str) -> None:
         file.write(response.content)
 
 
-# Extract questions from a question bank PDF using LLM.
 def extract_questions(db: Session, question_bank: QuestionBank) -> int:
-    # Step 1 — Check OpenAI API key first
-    openai_api_key = get_user_openai_key(db=db, user_id=question_bank.user_id)
+    # 1. Get all user API keys for multi-provider fallback & verify
+    user_keys = get_user_all_keys(db=db, user_id=question_bank.user_id)
+    if not any(bool(v) for v in user_keys.values()):
+        raise HTTPException(
+            status_code=400,
+            detail="No AI API key found. Please add your free Cerebras, Groq, or Gemini key in Profile settings.",
+        )
 
-    # Step 2 — Update status.
+    # 2. Update status
     question_bank.status = "extracting"
     db.commit()
     db.refresh(question_bank)
@@ -76,20 +77,17 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
     temporary_pdf_path = None
 
     try:
-        # Step 3 — Create temporary PDF.
+        # 3. Create temporary PDF
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temporary_file:
             temporary_pdf_path = temporary_file.name
 
-        # Step 4 — Download PDF.
+        # 4. Download PDF
         download_pdf(url=question_bank.cloudinary_url, destination=temporary_pdf_path)
 
-        # Step 5 — Extract text using PyMuPDF (layout-preserving mode).
-        # We use fitz directly instead of LangChain's loader so that
-        # columnar layouts (question text | marks column) are preserved.
+        # 5. Extract text preserving layout
         doc = fitz.open(temporary_pdf_path)
         full_text = ""
         for page in doc:
-            # "text" flag with "blocks" preserves reading order and column structure
             page_text = page.get_text("text")
             if page_text.strip():
                 full_text += page_text + "\n\n--- PAGE BREAK ---\n\n"
@@ -98,22 +96,21 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         if not full_text.strip():
             raise ValueError("PDF produced no readable text.")
 
-
-        # Step 6 — Send text to OpenAI for question extraction.
+        # 6. Send text to LLM router for question extraction
         parsed_questions = parse_questions(
-            api_key=openai_api_key,
             text=full_text,
+            user_keys=user_keys,
         )
 
         if not parsed_questions:
             raise ValueError("LLM extracted zero questions.")
 
-        # Step 7 — Delete old questions if re-extracting.
+        # 7. Delete old questions if re-extracting
         db.query(Question).filter(
             Question.question_bank_id == question_bank.id
         ).delete()
 
-        # Step 8 — Store extracted questions.
+        # 8. Store extracted questions
         for idx, parsed in enumerate(parsed_questions, start=1):
             q_num = parsed.get("question_number")
             if not q_num or q_num <= 0:
@@ -127,7 +124,7 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
             )
             db.add(question)
 
-        # Step 9 — Mark extraction complete.
+        # 9. Mark extraction complete
         question_bank.status = "extracted"
         db.commit()
         db.refresh(question_bank)
@@ -145,12 +142,10 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
         raise
 
     finally:
-        # Always remove temporary PDF.
         if temporary_pdf_path and os.path.exists(temporary_pdf_path):
             os.remove(temporary_pdf_path)
 
 
-# Fetch multiple question banks (optionally filtered by user_id).
 def get_question_banks(db: Session, user_id: int | None = None) -> list[QuestionBank]:
     query = db.query(QuestionBank)
     if user_id is not None:
@@ -163,7 +158,6 @@ def get_question_banks(db: Session, user_id: int | None = None) -> list[Question
     )
 
 
-# Fetch a single question bank.
 def get_question_bank(db: Session, question_bank_id: int) -> QuestionBank | None:
     return (
         db.query(QuestionBank)
@@ -172,7 +166,6 @@ def get_question_bank(db: Session, question_bank_id: int) -> QuestionBank | None
     )
 
 
-# Fetch all questions for a question bank.
 def get_questions(db: Session, question_bank_id: int) -> list[Question]:
     return (
         db.query(Question)
@@ -182,7 +175,6 @@ def get_questions(db: Session, question_bank_id: int) -> list[Question]:
     )
 
 
-# Manually add a new question to a question bank.
 def add_question_to_bank(
     db: Session,
     question_bank_id: int,

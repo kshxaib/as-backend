@@ -1,7 +1,7 @@
 import json
 import re
 
-from app.llm.service import call_openai
+from app.llm.router import call_extraction
 
 
 SYSTEM_INSTRUCTION = """You are an expert academic exam paper analyzer specializing in Indian university question papers.
@@ -49,9 +49,7 @@ AI Estimated (marks_source = "ai_estimated"):
 ]"""
 
 
-# Parse question bank text into structured questions using OpenAI.
-def parse_questions(api_key: str, text: str) -> list[dict]:
-
+def parse_questions(text: str, user_keys: dict[str, str] | None = None) -> list[dict]:
     if not text.strip():
         raise ValueError("No text provided for question extraction.")
 
@@ -66,13 +64,12 @@ def parse_questions(api_key: str, text: str) -> list[dict]:
         f"{text}"
     )
 
-    response = call_openai(
-        api_key=api_key,
+    response = call_extraction(
         prompt=prompt,
         system_instruction=SYSTEM_INSTRUCTION,
+        user_keys=user_keys,
     )
 
-    # Clean the response — strip code fences if the LLM adds them.
     cleaned = response.strip()
 
     if cleaned.startswith("```"):
@@ -85,8 +82,6 @@ def parse_questions(api_key: str, text: str) -> list[dict]:
     if not isinstance(questions, list):
         raise ValueError("LLM did not return a valid JSON array.")
 
-    # Validate and strictly enforce sequential 1-based numbering
-    # Check if duplicate numbers exist (e.g. all 1s)
     raw_nums = [q.get("question_number") for q in questions if isinstance(q, dict)]
     has_duplicate_nums = len(raw_nums) != len(set(raw_nums))
 
@@ -97,7 +92,6 @@ def parse_questions(api_key: str, text: str) -> list[dict]:
             continue
 
         q_num = question.get("question_number")
-        # If numbers had duplicates or were missing, renumber sequentially 1..N
         if has_duplicate_nums or not isinstance(q_num, int) or q_num <= 0:
             assigned_num = idx
         else:

@@ -18,6 +18,10 @@ class UserProfileResponse(BaseModel):
     username: str
     name: str
     has_openai_key: bool
+    has_gemini_key: bool
+    has_groq_key: bool
+    has_cerebras_key: bool
+    has_nvidia_key: bool
     created_at: datetime
 
     model_config = {
@@ -33,6 +37,22 @@ class TokenResponse(BaseModel):
 
 class OpenAIKeyUpdate(BaseModel):
     openai_api_key: str = Field(min_length=1)
+
+
+class GeminiKeyUpdate(BaseModel):
+    gemini_api_key: str = Field(min_length=1)
+
+
+class GroqKeyUpdate(BaseModel):
+    groq_api_key: str = Field(min_length=1)
+
+
+class CerebrasKeyUpdate(BaseModel):
+    cerebras_api_key: str = Field(min_length=1)
+
+
+class NvidiaKeyUpdate(BaseModel):
+    nvidia_api_key: str = Field(min_length=1)
 
 
 # Backward compatibility schemas

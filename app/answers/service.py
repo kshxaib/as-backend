@@ -4,7 +4,6 @@ from fastapi import HTTPException
 
 from app.db.models import Answer, AnswerSet, Question, QuestionBank
 from app.rag.service import generate_rag_answer
-from app.users.service import get_user_openai_key
 
 
 def parse_resource_ids(resource_ids_str: str) -> list[int]:
@@ -25,7 +24,6 @@ def generate_answer_set(db: Session, question_bank_id: int, user_id: int | None 
         raise HTTPException(status_code=404, detail=f"Question Bank with ID {question_bank_id} not found.")
 
     effective_user_id = user_id or qb.user_id
-    openai_key = get_user_openai_key(db=db, user_id=effective_user_id)
     resource_ids = parse_resource_ids(qb.resource_ids)
 
     questions = (
@@ -66,7 +64,7 @@ def generate_answer_set(db: Session, question_bank_id: int, user_id: int | None 
 
     db.commit()
 
-    # 4. Generate answers sequentially (with Phase 7 Reviewer pass)
+    # 4. Generate answers sequentially (with Reviewer pass and automatic fallback)
     has_failures = False
     for ans in answer_records:
         ans.status = "generating"
@@ -74,7 +72,8 @@ def generate_answer_set(db: Session, question_bank_id: int, user_id: int | None 
 
         try:
             rag_output = generate_rag_answer(
-                openai_api_key=openai_key,
+                db=db,
+                user_id=effective_user_id,
                 question_text=ans.question_text,
                 marks=ans.marks,
                 resource_ids=resource_ids,
@@ -110,7 +109,6 @@ def retry_single_answer(db: Session, answer_id: int) -> Answer:
         raise HTTPException(status_code=404, detail=f"AnswerSet with ID {ans.answer_set_id} not found.")
 
     qb = db.query(QuestionBank).filter(QuestionBank.id == answer_set.question_bank_id).first()
-    openai_key = get_user_openai_key(db=db, user_id=answer_set.user_id)
     resource_ids = parse_resource_ids(qb.resource_ids) if qb else []
 
     was_previously_completed = ans.status == "completed"
@@ -119,7 +117,8 @@ def retry_single_answer(db: Session, answer_id: int) -> Answer:
 
     try:
         rag_output = generate_rag_answer(
-            openai_api_key=openai_key,
+            db=db,
+            user_id=answer_set.user_id,
             question_text=ans.question_text,
             marks=ans.marks,
             resource_ids=resource_ids,

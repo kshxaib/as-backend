@@ -17,12 +17,56 @@ def user_has_openai_key(user: User | None) -> bool:
         return False
 
 
+def user_has_gemini_key(user: User | None) -> bool:
+    if not user or not user.gemini_api_key_encrypted:
+        return False
+    try:
+        decrypted = decrypt_api_key(user.gemini_api_key_encrypted)
+        return bool(decrypted and len(decrypted.strip()) > 5)
+    except Exception:
+        return False
+
+
+def user_has_groq_key(user: User | None) -> bool:
+    if not user or not user.groq_api_key_encrypted:
+        return False
+    try:
+        decrypted = decrypt_api_key(user.groq_api_key_encrypted)
+        return bool(decrypted and len(decrypted.strip()) > 5)
+    except Exception:
+        return False
+
+
+def user_has_cerebras_key(user: User | None) -> bool:
+    if not user or not user.cerebras_api_key_encrypted:
+        return False
+    try:
+        decrypted = decrypt_api_key(user.cerebras_api_key_encrypted)
+        return bool(decrypted and len(decrypted.strip()) > 5)
+    except Exception:
+        return False
+
+
+def user_has_nvidia_key(user: User | None) -> bool:
+    if not user or not user.nvidia_api_key_encrypted:
+        return False
+    try:
+        decrypted = decrypt_api_key(user.nvidia_api_key_encrypted)
+        return bool(decrypted and len(decrypted.strip()) > 5)
+    except Exception:
+        return False
+
+
 def to_profile_response(user: User) -> UserProfileResponse:
     return UserProfileResponse(
         id=user.id,
         username=user.username or f"user_{user.id}",
         name=user.name,
         has_openai_key=user_has_openai_key(user),
+        has_gemini_key=user_has_gemini_key(user),
+        has_groq_key=user_has_groq_key(user),
+        has_cerebras_key=user_has_cerebras_key(user),
+        has_nvidia_key=user_has_nvidia_key(user),
         created_at=user.created_at,
     )
 
@@ -40,6 +84,10 @@ def register_user(db: Session, user_data: UserRegister) -> tuple[User, str]:
         password_hash=hash_password(user_data.password),
         name=user_data.name.strip(),
         openai_api_key_encrypted=None,
+        gemini_api_key_encrypted=None,
+        groq_api_key_encrypted=None,
+        cerebras_api_key_encrypted=None,
+        nvidia_api_key_encrypted=None,
     )
 
     db.add(user)
@@ -76,8 +124,92 @@ def update_user_openai_key(db: Session, user: User, openai_key: str) -> User:
     return user
 
 
+def update_user_gemini_key(db: Session, user: User, gemini_key: str) -> User:
+    clean_key = gemini_key.strip()
+    if not clean_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Gemini API key format.",
+        )
+
+    user.gemini_api_key_encrypted = encrypt_api_key(clean_key)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_groq_key(db: Session, user: User, groq_key: str) -> User:
+    clean_key = groq_key.strip()
+    if not clean_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Groq API key format.",
+        )
+
+    user.groq_api_key_encrypted = encrypt_api_key(clean_key)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_cerebras_key(db: Session, user: User, cerebras_key: str) -> User:
+    clean_key = cerebras_key.strip()
+    if not clean_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Cerebras API key format.",
+        )
+
+    user.cerebras_api_key_encrypted = encrypt_api_key(clean_key)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_user_nvidia_key(db: Session, user: User, nvidia_key: str) -> User:
+    clean_key = nvidia_key.strip()
+    if not clean_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid NVIDIA API key format.",
+        )
+
+    user.nvidia_api_key_encrypted = encrypt_api_key(clean_key)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def delete_user_openai_key(db: Session, user: User) -> User:
     user.openai_api_key_encrypted = None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_gemini_key(db: Session, user: User) -> User:
+    user.gemini_api_key_encrypted = None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_groq_key(db: Session, user: User) -> User:
+    user.groq_api_key_encrypted = None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_cerebras_key(db: Session, user: User) -> User:
+    user.cerebras_api_key_encrypted = None
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user_nvidia_key(db: Session, user: User) -> User:
+    user.nvidia_api_key_encrypted = None
     db.commit()
     db.refresh(user)
     return user
@@ -109,8 +241,158 @@ def get_user_openai_key(db: Session, user_id: int) -> str:
         )
 
 
+def get_user_gemini_key(db: Session, user_id: int) -> str:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found.",
+        )
+
+    if not user.gemini_api_key_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Gemini API key is missing. Please add your Gemini API key in your Profile settings.",
+        )
+
+    try:
+        decrypted = decrypt_api_key(user.gemini_api_key_encrypted)
+        if not decrypted:
+            raise ValueError()
+        return decrypted
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Gemini API key. Please re-enter your key in your Profile settings.",
+        )
+
+
+def get_user_groq_key(db: Session, user_id: int) -> str:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found.",
+        )
+
+    if not user.groq_api_key_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Groq API key is missing. Please add your Groq API key in your Profile settings.",
+        )
+
+    try:
+        decrypted = decrypt_api_key(user.groq_api_key_encrypted)
+        if not decrypted:
+            raise ValueError()
+        return decrypted
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Groq API key. Please re-enter your key in your Profile settings.",
+        )
+
+
+def get_user_cerebras_key(db: Session, user_id: int) -> str:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found.",
+        )
+
+    if not user.cerebras_api_key_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cerebras API key is missing. Please add your Cerebras API key in your Profile settings.",
+        )
+
+    try:
+        decrypted = decrypt_api_key(user.cerebras_api_key_encrypted)
+        if not decrypted:
+            raise ValueError()
+        return decrypted
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt Cerebras API key. Please re-enter your key in your Profile settings.",
+        )
+
+
+def get_user_nvidia_key(db: Session, user_id: int) -> str:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found.",
+        )
+
+    if not user.nvidia_api_key_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="NVIDIA API key is missing. Please add your NVIDIA API key in your Profile settings.",
+        )
+
+    try:
+        decrypted = decrypt_api_key(user.nvidia_api_key_encrypted)
+        if not decrypted:
+            raise ValueError()
+        return decrypted
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to decrypt NVIDIA API key. Please re-enter your key in your Profile settings.",
+        )
+
+
 def get_user(db: Session, user_id: int) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
+
+
+def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
+    """Retrieve all decrypted API keys for a user, falling back to None if not set."""
+    user = db.query(User).filter(User.id == user_id).first()
+    keys = {
+        "gemini": None,
+        "groq": None,
+        "cerebras": None,
+        "nvidia": None,
+        "openai": None,
+    }
+    if not user:
+        return keys
+
+    if user.gemini_api_key_encrypted:
+        try:
+            keys["gemini"] = decrypt_api_key(user.gemini_api_key_encrypted)
+        except Exception:
+            pass
+
+    if user.groq_api_key_encrypted:
+        try:
+            keys["groq"] = decrypt_api_key(user.groq_api_key_encrypted)
+        except Exception:
+            pass
+
+    if user.cerebras_api_key_encrypted:
+        try:
+            keys["cerebras"] = decrypt_api_key(user.cerebras_api_key_encrypted)
+        except Exception:
+            pass
+
+    if user.nvidia_api_key_encrypted:
+        try:
+            keys["nvidia"] = decrypt_api_key(user.nvidia_api_key_encrypted)
+        except Exception:
+            pass
+
+    if user.openai_api_key_encrypted:
+        try:
+            keys["openai"] = decrypt_api_key(user.openai_api_key_encrypted)
+        except Exception:
+            pass
+
+    return keys
 
 
 # Legacy support
@@ -121,6 +403,10 @@ def create_user(db: Session, user_data: UserCreate) -> User:
         password_hash=hash_password("default123"),
         name=user_data.name,
         openai_api_key_encrypted=encrypted_key,
+        gemini_api_key_encrypted=None,
+        groq_api_key_encrypted=None,
+        cerebras_api_key_encrypted=None,
+        nvidia_api_key_encrypted=None,
     )
     db.add(user)
     db.commit()
