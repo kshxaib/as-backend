@@ -105,3 +105,31 @@ def delete_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
         "message": "Resource deleted successfully",
         "resource_id": resource_id,
     }
+
+
+# Download resource PDF as clean attachment
+@router.get("/{resource_id}/download")
+def download_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
+    from fastapi import Response
+    from app.storage.cloudinary import download_file_bytes
+
+    resource = get_resource(db=db, resource_id=resource_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    try:
+        content = download_file_bytes(
+            public_id=resource.cloudinary_public_id,
+            direct_url=resource.cloudinary_url,
+            resource_type="raw",
+        )
+        safe_filename = f"{resource.name.replace(' ', '_')}.pdf"
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")

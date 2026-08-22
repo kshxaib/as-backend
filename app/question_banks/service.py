@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models import QuestionBank, Question
 from app.parsing.question_parser import parse_questions
-from app.storage.cloudinary import upload_pdf
-from app.users.service import get_user_all_keys
+from app.storage.cloudinary import upload_pdf, download_file_bytes
+from app.users.service import get_user_all_keys, check_user_has_all_required_keys
 
 
 def create_question_bank(
@@ -52,22 +52,16 @@ def create_question_bank(
     return question_bank
 
 
-def download_pdf(url: str, destination: str) -> None:
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-
+def download_pdf(public_id: str, direct_url: str, destination: str) -> None:
+    content = download_file_bytes(public_id=public_id, direct_url=direct_url)
     with open(destination, "wb") as file:
-        file.write(response.content)
+        file.write(content)
 
 
 def extract_questions(db: Session, question_bank: QuestionBank) -> int:
-    # 1. Get all user API keys for multi-provider fallback & verify
+    # 1. Verify user has configured all 4 required free keys
+    check_user_has_all_required_keys(db=db, user_id=question_bank.user_id)
     user_keys = get_user_all_keys(db=db, user_id=question_bank.user_id)
-    if not any(bool(v) for v in user_keys.values()):
-        raise HTTPException(
-            status_code=400,
-            detail="No AI API key found. Please add your free Cerebras, Groq, or Gemini key in Profile settings.",
-        )
 
     # 2. Update status
     question_bank.status = "extracting"
@@ -82,7 +76,7 @@ def extract_questions(db: Session, question_bank: QuestionBank) -> int:
             temporary_pdf_path = temporary_file.name
 
         # 4. Download PDF
-        download_pdf(url=question_bank.cloudinary_url, destination=temporary_pdf_path)
+        download_pdf(public_id=question_bank.cloudinary_public_id, direct_url=question_bank.cloudinary_url, destination=temporary_pdf_path)
 
         # 5. Extract text preserving layout
         doc = fitz.open(temporary_pdf_path)

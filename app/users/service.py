@@ -394,6 +394,29 @@ def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
 
     return keys
 
+def check_user_has_all_required_keys(db: Session, user_id: int) -> None:
+    """Ensure user has entered all 4 required free API keys (Gemini, Groq, Cerebras, NVIDIA NIM)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
+
+    missing = []
+    if not user.gemini_api_key_encrypted:
+        missing.append("Google Gemini")
+    if not user.groq_api_key_encrypted:
+        missing.append("Groq Cloud")
+    if not user.cerebras_api_key_encrypted:
+        missing.append("Cerebras Cloud")
+    if not user.nvidia_api_key_encrypted:
+        missing.append("NVIDIA NIM")
+
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required free API keys: {', '.join(missing)}. Please configure all 4 free keys in Profile settings to enable AI features.",
+        )
+
+
 
 # Legacy support
 def create_user(db: Session, user_data: UserCreate) -> User:

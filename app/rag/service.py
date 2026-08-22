@@ -3,7 +3,7 @@ from langchain_core.documents import Document
 
 from app.llm.router import call_generation, call_review
 from app.rag.retriever import retrieve_relevant_documents
-from app.users.service import get_user_all_keys
+from app.users.service import get_user_all_keys, check_user_has_all_required_keys
 
 
 DRAFT_SYSTEM_INSTRUCTION = """You are an academic subject matter expert and exam solver for university students.
@@ -137,13 +137,9 @@ def generate_rag_answer(
     limit: int = 5,
     enable_review: bool = True,
 ) -> dict:
-    # 1. Retrieve all user API keys & verify
+    # 1. Verify user has configured all 4 required free keys
+    check_user_has_all_required_keys(db=db, user_id=user_id)
     user_keys = get_user_all_keys(db=db, user_id=user_id)
-    if not any(bool(v) for v in user_keys.values()):
-        raise HTTPException(
-            status_code=400,
-            detail="No AI API key found. Please add your free Groq, Gemini, or Cerebras key in Profile settings.",
-        )
 
     # 2. Retrieve relevant chunks from Qdrant with resource filter
     retrieved_docs = retrieve_relevant_documents(

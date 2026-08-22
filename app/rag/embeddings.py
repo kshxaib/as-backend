@@ -5,8 +5,8 @@ from langchain_core.embeddings import Embeddings
 
 load_dotenv()
 
-EMBEDDING_MODEL_GEMINI = "models/text-embedding-004"
-EMBEDDING_DIMENSION_GEMINI = 768
+EMBEDDING_MODEL_GEMINI = "models/gemini-embedding-001"
+EMBEDDING_DIMENSION_GEMINI = 3072
 
 EMBEDDING_MODEL_OPENAI = "text-embedding-3-small"
 EMBEDDING_DIMENSION_OPENAI = 1536
@@ -16,7 +16,7 @@ def get_embeddings_instance(user_keys: dict[str, str] | None = None) -> Tuple[Em
     """
     Returns an active LangChain Embeddings instance, dimension, and model name.
     Priority:
-    1. Gemini API Key (User key or .env) -> 100% Free text-embedding-004 (768-dim)
+    1. Gemini API Key (User key or .env) -> 100% Free gemini-embedding-001 (3072-dim)
     2. OpenAI API Key (User key or .env) -> text-embedding-3-small (1536-dim)
     """
     user_keys = user_keys or {}

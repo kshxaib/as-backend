@@ -27,7 +27,7 @@ PROVIDER_CONFIGS = {
     },
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "default_models": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+        "default_models": ["gemini-3.6-flash", "gemini-3.1-pro-preview"],
     },
     "nvidia": {
         "base_url": "https://integrate.api.nvidia.com/v1",

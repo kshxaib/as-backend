@@ -9,15 +9,14 @@ from fastapi import HTTPException
 
 from app.db.models import Resource
 from app.rag.vector_store import create_vector_store
-from app.users.service import get_user_all_keys
+from app.storage.cloudinary import download_file_bytes
+from app.users.service import get_user_all_keys, check_user_has_all_required_keys
 
 
-def download_pdf(url: str, destination: str) -> None:
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-
+def download_pdf(public_id: str, direct_url: str, destination: str) -> None:
+    content = download_file_bytes(public_id=public_id, direct_url=direct_url)
     with open(destination, "wb") as file:
-        file.write(response.content)
+        file.write(content)
 
 
 def load_pdf(pdf_path: str) -> list[Document]:
@@ -59,13 +58,9 @@ def enrich_documents(documents: list[Document], resource: Resource) -> list[Docu
 
 
 def index_resource(db: Session, resource: Resource) -> int:
-    # 1. Retrieve all user keys & verify key presence
+    # 1. Verify user has configured all 4 required free keys
+    check_user_has_all_required_keys(db=db, user_id=resource.user_id)
     user_keys = get_user_all_keys(db=db, user_id=resource.user_id)
-    if not user_keys.get("gemini") and not user_keys.get("openai"):
-        raise HTTPException(
-            status_code=400,
-            detail="Gemini API key is required. Please add your free Google Gemini API key in Profile settings to enable vector indexing.",
-        )
 
     # 2. Update status
     resource.status = "indexing"
@@ -80,7 +75,7 @@ def index_resource(db: Session, resource: Resource) -> int:
             temporary_pdf_path = temporary_file.name
 
         # 4. Download PDF
-        download_pdf(url=resource.cloudinary_url, destination=temporary_pdf_path)
+        download_pdf(public_id=resource.cloudinary_public_id, direct_url=resource.cloudinary_url, destination=temporary_pdf_path)
 
         # 5. Load PDF using PyMuPDF
         documents = load_pdf(pdf_path=temporary_pdf_path)

@@ -145,3 +145,33 @@ def add_question_endpoint(
     )
 
     return question
+
+
+# Download question bank original exam paper PDF as clean attachment
+@router.get("/{question_bank_id}/download")
+def download_question_bank_pdf_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
+    from fastapi import Response
+    from app.storage.cloudinary import download_file_bytes
+
+    qb = get_question_bank(db=db, question_bank_id=question_bank_id)
+    if qb is None:
+        raise HTTPException(status_code=404, detail="Question Bank not found.")
+
+    try:
+        content = download_file_bytes(
+            public_id=qb.cloudinary_public_id,
+            direct_url=qb.cloudinary_url,
+            resource_type="raw",
+        )
+        safe_filename = f"{qb.name.replace(' ', '_')}.pdf"
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
+
+
