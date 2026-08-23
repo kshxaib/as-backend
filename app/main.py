@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from app.db.database import engine
 from app.db.init_db import init_db
