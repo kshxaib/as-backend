@@ -61,12 +61,48 @@ app.include_router(answers_router)
 app.include_router(community_router)
 
 
+import threading
+from datetime import datetime, timezone
+
+# ─── Health Check Tracker ──────────────────────────────────────────────────────
+health_tracker = {
+    "hit_count": 0,
+    "last_hit_at": None,
+    "server_start_time": datetime.now(timezone.utc).isoformat(),
+}
+_health_lock = threading.Lock()
+
+
 @app.get("/api/health")
 def health_check():
+    with _health_lock:
+        health_tracker["hit_count"] += 1
+        now_iso = datetime.now(timezone.utc).isoformat()
+        health_tracker["last_hit_at"] = now_iso
+
     return {
         "status": "ok",
         "service": os.getenv("APP_NAME", "AcademicStack"),
+        "hit_count": health_tracker["hit_count"],
+        "last_hit_at": health_tracker["last_hit_at"],
+        "server_start_time": health_tracker["server_start_time"],
     }
+
+
+@app.get("/api/health/counter")
+def health_counter_check():
+    with _health_lock:
+        health_tracker["hit_count"] += 1
+        now_iso = datetime.now(timezone.utc).isoformat()
+        health_tracker["last_hit_at"] = now_iso
+
+    return {
+        "status": "ok",
+        "hit_count": health_tracker["hit_count"],
+        "last_hit_at": health_tracker["last_hit_at"],
+        "server_start_time": health_tracker["server_start_time"],
+    }
+
 
 
 @app.get("/api/health/db")
