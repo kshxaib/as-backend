@@ -10,6 +10,8 @@ from app.db.database import engine
 from app.db.init_db import init_db
 from app.vector_store.qdrant import check_qdrant_connection
 
+IST = ZoneInfo("Asia/Kolkata")
+
 load_dotenv()
 
 # Initialize DB schema and run any migrations
