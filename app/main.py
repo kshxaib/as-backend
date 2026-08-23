@@ -62,13 +62,13 @@ app.include_router(community_router)
 
 
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
 
 # ─── Health Check Tracker ──────────────────────────────────────────────────────
 health_tracker = {
     "hit_count": 0,
     "last_hit_at": None,
-    "server_start_time": datetime.now(timezone.utc).isoformat(),
+    "server_start_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
 }
 _health_lock = threading.Lock()
 
@@ -77,8 +77,7 @@ _health_lock = threading.Lock()
 def health_check():
     with _health_lock:
         health_tracker["hit_count"] += 1
-        now_iso = datetime.now(timezone.utc).isoformat()
-        health_tracker["last_hit_at"] = now_iso
+        health_tracker["last_hit_at"] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
     return {
         "status": "ok",
@@ -89,19 +88,6 @@ def health_check():
     }
 
 
-@app.get("/api/health/counter")
-def health_counter_check():
-    with _health_lock:
-        health_tracker["hit_count"] += 1
-        now_iso = datetime.now(timezone.utc).isoformat()
-        health_tracker["last_hit_at"] = now_iso
-
-    return {
-        "status": "ok",
-        "hit_count": health_tracker["hit_count"],
-        "last_hit_at": health_tracker["last_hit_at"],
-        "server_start_time": health_tracker["server_start_time"],
-    }
 
 
 
