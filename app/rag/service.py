@@ -1,4 +1,5 @@
 import json
+import re
 from langchain_core.documents import Document
 
 from app.llm.router import call_generation, call_review
@@ -26,15 +27,82 @@ Guidelines:
    - NEVER output lone dollar signs `$` on blank lines.
    - NEVER use bare square brackets `[ \\formula ]` or parentheses `( \\formula )` for LaTeX math. ALWAYS use `$$` or `$`.
 
-3. TYPOGRAPHY & SPACING:
+3. TYPOGRAPHY & STRUCTURE:
    - Use exactly one blank line between sections, definitions, and topics.
-   - Do NOT leave excessive empty lines between sentences.
-   - Use bold subheadings (e.g., `### 1. Union ($A \\cup B$)`) for clear visual hierarchy.
+   - Use `### Heading` subheadings for clear visual hierarchy. Do NOT use bold-only headers.
+   - If an ASCII diagram or architecture flowchart is helpful, wrap it inside a fenced code block (``` ... ```) with clean monospace alignment.
+   - Do NOT use markdown dividers `---` or `--` anywhere in your answer.
 
-4. Adapt the answer depth to the marks allotted:
-   - 2 Marks: Clear definition, formula with `$`/`$$` if applicable, and 2-3 key bullet points (50-100 words).
-   - 5 Marks: Comprehensive structured explanation with definitions, equations, step-by-step breakdown, and examples (150-250 words).
-   - 10+ Marks: Deep, exhaustive university-level answer covering theory, architectural details, steps, pros/cons, comparisons, and real-world use cases (400-600 words)."""
+4. REQUIRED ANSWER FORMAT:
+   Return ONLY the student's final answer. Do NOT repeat the question.
+
+   Use the following structure when applicable — omit any section that is not relevant to the question:
+
+   ### Definition
+   Give a concise and accurate definition.
+
+   ### 1. [First major concept]
+   Explain the concept clearly.
+   - Key point
+   - Key point
+
+   ### 2. [Second major concept]
+   Explain the concept clearly.
+
+   ### Example
+   Provide a relevant example only when it materially improves understanding.
+
+   ### Formula
+   Introduce the formula naturally and explain its variables/terms.
+   $$
+   formula
+   $$
+
+   For multi-step problems:
+   ### Step 1: [Description]
+   Explanation.
+   ### Step 2: [Description]
+   Explanation.
+
+   For comparison questions, use:
+   ### [Concept A] vs [Concept B]
+   A comparison table may be used ONLY when the question explicitly asks for comparison, differences, or tabular representation.
+
+   NEVER add these sections unless explicitly requested by the question:
+   - Summary / Summary Table
+   - Conclusion
+   - Key Takeaways / Key Notes
+   - Mark Allocation / Grading Rubric
+   - Reviewer Notes
+   - Question (do not restate the question)
+
+   The answer must read naturally as a university examination answer, not as a generated template.
+
+5. MARK-BASED ANSWER STRUCTURE:
+
+   2 MARKS:
+   - Direct definition or explanation.
+   - One important formula or fact if applicable.
+   - 2–3 concise bullet points.
+   - Do NOT over-explain. Stop when done.
+
+   5 MARKS:
+   - Definition or brief introduction.
+   - 2–4 logically ordered sections with `### Heading`.
+   - Formula or equation where applicable.
+   - Clear explanation with a relevant example.
+   - Moderate depth — cover the concept fully but concisely.
+
+   10+ MARKS:
+   - Brief introduction or definition.
+   - Detailed conceptual explanation broken into logical subsections.
+   - Step-by-step process where applicable.
+   - Formulas and derivations where applicable.
+   - Example or application.
+   - Advantages, disadvantages, or comparison ONLY if directly relevant.
+   - Sufficient depth for a university-level examination.
+
+   Never pad an answer to meet a word count. Prioritize correctness, completeness, and mark-appropriate depth."""
 
 
 REVIEWER_SYSTEM_INSTRUCTION = """You are a Senior Academic Reviewer and Grading Professor for University Examination Boards.
@@ -43,19 +111,47 @@ Your job is to review a draft exam answer against the study material context and
 
 Evaluation Checklist:
 1. Grounding & Accuracy: Ensure all facts and formulas are strictly supported by the study material.
+
 2. Math & Formula Formatting:
-   - Ensure inline math is tight `$A \\cup B$` and block math is `$$ formula $$`.
+   - Ensure inline math uses tight `$formula$` and display math uses `$$\nformula\n$$` with no empty lines inside.
    - Never leave lone `$` symbols on blank lines.
    - Fix any broken brackets like `[ \\mu ... ]` into valid `$$ \\mu ... $$` or `$ \\mu ... $`.
-   - Ensure double backslashes `\\\\` in LaTeX environments like `\\\\begin{cases}`.
-3. Clean Spacing:
-   - One clean blank line between headings and subquestions. No excessive empty lines.
-4. Mark-Appropriate Depth:
-   - 2 Marks: Concise, punchy, formulas + key points.
-   - 5 Marks: Structured with clear subheadings, formulas, examples.
-   - 10+ Marks: Exhaustive academic rigor, step-by-step breakdowns, and comprehensive depth.
+   - Ensure double backslashes `\\\\` in LaTeX environments like `\\begin{cases}`.
 
-Output: Return ONLY the final, polished answer in Markdown format ready for student study."""
+3. Structure & Cleanliness:
+   - Do NOT restate the question at the top.
+   - Remove ALL unsolicited sections not relevant to the question, including:
+     Summary, Summary Table, Conclusion, Key Takeaways, Key Notes, Mark Allocation, Grading Rubric, Reviewer Notes.
+   - Do NOT include horizontal rules `---` or `--` anywhere.
+   - Use `### Heading` subheadings for structure. Do NOT use bold-only headers.
+   - Omit any heading or section that is not directly relevant to the question.
+
+4. Mark-Appropriate Depth:
+   - 2 Marks: Concise definition + formula if applicable + 2–3 tight bullet points. Stop when done.
+   - 5 Marks: Definition, 2–4 logically ordered sections, formula, explanation, relevant example.
+   - 10+ Marks: Detailed conceptual explanation with subsections, formulas, derivations, step-by-step process, example/application, and any comparison only if relevant.
+   - Never pad an answer. Prioritize correctness and completeness over length.
+
+Output: Return ONLY the final, polished student answer in Markdown format. No preamble, no reviewer commentary, no meta-notes."""
+
+
+def clean_answer_text(text: str) -> str:
+    if not text:
+        return ""
+
+    # Strip any accidental rubric/scoring feedback leakage from the reviewer
+    cleaned = re.sub(
+        r"(?:^|\n)(?:Mark Allocation|Grading Rubric|Scoring Breakdown|Reviewer Assessment|Score):[\s\S]*?(?=\n\n|\n[A-Z]|$)",
+        "\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Strip stray markdown horizontal rules
+    cleaned = re.sub(r"(?:^|\n)\s*[-*_]{3,}\s*(?=\n|$)", "\n", cleaned)
+    cleaned = re.sub(r"(?:^|\n)\s*--\s*(?=\n|$)", "\n", cleaned)
+
+    return cleaned.strip()
 
 
 def build_rag_prompt(question_text: str, marks: int, context_documents: list[Document]) -> tuple[str, list[dict]]:
@@ -90,7 +186,8 @@ STUDY MATERIAL CONTEXT:
 {context_str}
 
 Please generate the complete, mark-appropriate answer for this question using the context above.
-Format all math formulas with $$ and $ delimiters cleanly without stray blank lines inside formulas."""
+Format all math formulas with $$ and $ delimiters cleanly without stray blank lines inside formulas.
+Do NOT include unnecessary summary tables unless explicitly requested."""
 
     return prompt, sources
 
@@ -115,7 +212,7 @@ STUDY MATERIAL CONTEXT:
 DRAFT ANSWER:
 {draft_answer}
 
-Perform your Academic Review. Ensure math formulas ($$ / $) are formatted cleanly without extra linebreaks and refine the answer for exam scoring."""
+Perform your Academic Review. Ensure math formulas ($$ / $) are formatted cleanly, remove any unsolicited summary tables or markdown horizontal rules (---), and return ONLY the final answer."""
 
     try:
         short_q = question_text[:50] + "..." if len(question_text) > 50 else question_text
@@ -125,9 +222,10 @@ Perform your Academic Review. Ensure math formulas ($$ / $) are formatted cleanl
             user_keys=user_keys,
             task_name=f"AI Reviewer ({marks}M: '{short_q}')",
         )
-        return reviewed_answer.strip() if reviewed_answer and len(reviewed_answer.strip()) > 30 else draft_answer
+        cleaned = clean_answer_text(reviewed_answer)
+        return cleaned if cleaned and len(cleaned) > 30 else clean_answer_text(draft_answer)
     except Exception:
-        return draft_answer
+        return clean_answer_text(draft_answer)
 
 
 def generate_rag_answer(
@@ -168,7 +266,7 @@ def generate_rag_answer(
     )
 
     # 5. AI Answer Reviewer Pass
-    final_content = draft_answer.strip()
+    final_content = clean_answer_text(draft_answer)
     if enable_review and final_content:
         final_content = review_rag_answer(
             question_text=question_text,

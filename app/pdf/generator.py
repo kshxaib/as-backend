@@ -14,15 +14,17 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     HRFlowable,
+    Preformatted,
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 
-# ─── Register Modern Unicode TrueType Fonts ──────────────────────────────────
+# ─── Register Modern TrueType Fonts ───────────────────────────────────────────
 FONT_REGULAR = "Helvetica"
 FONT_BOLD = "Helvetica-Bold"
+FONT_MONO = "Courier"
 
 try:
     windows_fonts = "C:/Windows/Fonts"
@@ -30,6 +32,7 @@ try:
     segoe_bold = os.path.join(windows_fonts, "segoeuib.ttf")
     arial_reg = os.path.join(windows_fonts, "arial.ttf")
     arial_bold = os.path.join(windows_fonts, "arialbd.ttf")
+    consolas_reg = os.path.join(windows_fonts, "consola.ttf")
 
     if os.path.exists(segoe_reg) and os.path.exists(segoe_bold):
         pdfmetrics.registerFont(TTFont("ModernAcademic", segoe_reg))
@@ -41,8 +44,12 @@ try:
         pdfmetrics.registerFont(TTFont("ModernAcademic-Bold", arial_bold))
         FONT_REGULAR = "ModernAcademic"
         FONT_BOLD = "ModernAcademic-Bold"
+
+    if os.path.exists(consolas_reg):
+        pdfmetrics.registerFont(TTFont("ModernMono", consolas_reg))
+        FONT_MONO = "ModernMono"
 except Exception as font_err:
-    print(f"Warning: Fallback to default Helvetica: {font_err}")
+    print(f"Warning: Fallback to default fonts: {font_err}")
 
 
 class NumberedCanvas(canvas.Canvas):
@@ -121,51 +128,111 @@ def latex_to_unicode(latex_str: str) -> str:
             s = s.replace(inner.group(0), cases_str)
 
     replacements = [
+        # Sets & Logic
         (r"\\mu", "μ"),
         (r"\\cup", " ∪ "),
         (r"\\cap", " ∩ "),
+        (r"\\land", " ∧ "),
+        (r"\\lor", " ∨ "),
         (r"\\neg", "¬"),
+        (r"\\sim", "∼"),
         (r"\\subset", " ⊂ "),
         (r"\\subseteq", " ⊆ "),
+        (r"\\supset", " ⊃ "),
+        (r"\\supseteq", " ⊇ "),
         (r"\\in", " ∈ "),
         (r"\\notin", " ∉ "),
         (r"\\emptyset", "∅"),
+        (r"\\oplus", " ⊕ "),
+        (r"\\odot", " ⊙ "),
+        (r"\\setminus", " \\ "),
+        # Relations & Operations
         (r"\\geq", " ≥ "),
         (r"\\ge", " ≥ "),
         (r"\\leq", " ≤ "),
         (r"\\le", " ≤ "),
         (r"\\neq", " ≠ "),
         (r"\\ne", " ≠ "),
+        (r"\\equiv", " ≡ "),
         (r"\\times", " × "),
         (r"\\div", " ÷ "),
         (r"\\pm", " ± "),
+        (r"\\mp", " ∓ "),
         (r"\\approx", " ≈ "),
+        (r"\\propto", " ∝ "),
         (r"\\infty", "∞"),
+        (r"\\rightarrow", " → "),
+        (r"\\to", " → "),
+        (r"\\leftarrow", " ← "),
+        (r"\\Rightarrow", " ⇒ "),
+        (r"\\Leftarrow", " ⇐ "),
+        (r"\\Leftrightarrow", " ⇔ "),
+        # Greek Letters
         (r"\\alpha", "α"),
         (r"\\beta", "β"),
         (r"\\gamma", "γ"),
+        (r"\\Gamma", "Γ"),
         (r"\\delta", "δ"),
+        (r"\\Delta", "Δ"),
+        (r"\\epsilon", "ε"),
+        (r"\\varepsilon", "ε"),
+        (r"\\zeta", "ζ"),
+        (r"\\eta", "η"),
         (r"\\theta", "θ"),
-        (r"\\sigma", "σ"),
+        (r"\\Theta", "Θ"),
+        (r"\\iota", "ι"),
+        (r"\\kappa", "κ"),
         (r"\\lambda", "λ"),
+        (r"\\Lambda", "Λ"),
+        (r"\\nu", "ν"),
+        (r"\\xi", "ξ"),
         (r"\\pi", "π"),
+        (r"\\rho", "ρ"),
+        (r"\\sigma", "σ"),
+        (r"\\Sigma", "Σ"),
+        (r"\\tau", "τ"),
+        (r"\\phi", "φ"),
+        (r"\\Phi", "Φ"),
+        (r"\\chi", "χ"),
+        (r"\\psi", "ψ"),
+        (r"\\omega", "ω"),
+        (r"\\Omega", "Ω"),
+        # Operators & Math Functions
         (r"\\sum", "Σ"),
         (r"\\prod", "Π"),
         (r"\\int", "∫"),
-        (r"\\rightarrow", " → "),
-        (r"\\to", " → "),
-        (r"\\Rightarrow", " ⇒ "),
+        (r"\\partial", "∂"),
+        (r"\\nabla", "∇"),
         (r"\\max", "max"),
         (r"\\min", "min"),
         (r"\\log", "log"),
         (r"\\ln", "ln"),
+        (r"\\exp", "exp"),
+        (r"\\sin", "sin"),
+        (r"\\cos", "cos"),
+        (r"\\tan", "tan"),
+        (r"\\lim", "lim"),
+        # Formatting & Macros
+        (r"\\mathcal\{([A-Za-z])\}", r"\1"),
+        (r"\\mathbb\{([A-Za-z])\}", r"\1"),
         (r"\\text\{([^}]+)\}", r"\1"),
         (r"\\textbf\{([^}]+)\}", r"<b>\1</b>"),
         (r"\\textit\{([^}]+)\}", r"<i>\1</i>"),
         (r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1 / \2)"),
+        (r"\\sqrt\[([^]]+)\]\{([^}]+)\}", r"\1√(\2)"),
         (r"\\sqrt\{([^}]+)\}", r"√(\1)"),
-        (r"_\{([^}]+)\}", r"_(\1)"),
+        (r"\\bar\{([^}]+)\}", r"\1̄"),
+        (r"\\hat\{([^}]+)\}", r"\1̂"),
+        (r"\\vec\{([^}]+)\}", r"\1⃗"),
+        (r"\\overline\{([^}]+)\}", r"\1̄"),
+        (r"\\underline\{([^}]+)\}", r"\1"),
+        # Superscript & Subscript Cleanup
+        (r"\^\{c\}|\^c", "ᶜ"),
+        (r"\^\{2\}|\^2", "²"),
+        (r"\^\{3\}|\^3", "³"),
+        (r"\^\{n\}|\^n", "ⁿ"),
         (r"\^\{([^}]+)\}", r"^(\1)"),
+        (r"_\{([^}]+)\}", r"_(\1)"),
         (r"\\cdot", "·"),
         (r"\\quad", " "),
         (r"\\qquad", "   "),
@@ -193,35 +260,28 @@ ALLOWED_TAG_PATTERN = re.compile(
 
 
 def xml_escape(text: str) -> str:
-    """
-    Sanitizes raw HTML/Markdown into safe ReportLab-compliant XML.
-    - Converts all variants of <br> into <br/>
-    - Strips unsupported HTML tags (table, div, p, span, li, etc.)
-    - Safely escapes &, <, > without breaking allowed formatting tags.
-    """
+    """Sanitizes raw HTML/Markdown into safe ReportLab-compliant XML."""
     if not text:
         return ""
 
-    # 1. Normalize linebreaks & br tags
+    # Normalize br tags
     text = re.sub(r"<\s*/?\s*br\s*/?\s*>", "<br/>", text, flags=re.IGNORECASE)
 
-    # 2. Strip disallowed HTML tags
-    disallowed = ["div", "span", "p", "ul", "ol", "li", "table", "tr", "td", "th", "tbody", "thead", "hr"]
+    # Strip disallowed HTML tags
+    disallowed = ["div", "span", "p", "ul", "ol", "li", "table", "tr", "td", "th", "tbody", "thead", "hr", "pre", "code"]
     for tag in disallowed:
         text = re.sub(rf"<\s*/?\s*{tag}[^>]*>", "", text, flags=re.IGNORECASE)
 
-    # 3. Escape XML entities safely
+    # Escape XML entities safely
     parts = ALLOWED_TAG_PATTERN.split(text)
     escaped_parts = []
     for p in parts:
         if ALLOWED_TAG_PATTERN.match(p):
-            # Normalize to strictly lowercase tag name for ReportLab
             if p.lower() in ("<br>", "<br/>", "</br>"):
                 escaped_parts.append("<br/>")
             else:
                 escaped_parts.append(p)
         else:
-            # Escape & (not already escaped), <, >
             p = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+);)", "&amp;", p)
             p = p.replace("<", "&lt;").replace(">", "&gt;")
             escaped_parts.append(p)
@@ -243,7 +303,6 @@ def parse_markdown_table(
     header_found = False
 
     for line in lines:
-        # Skip separator line e.g. |---|---| or |:---|:---|
         if re.match(r"^\|?[\s\-:|]+\|?$", line) and "-" in line:
             header_found = True
             continue
@@ -254,8 +313,9 @@ def parse_markdown_table(
 
         cell_paras = []
         for c in raw_cells:
-            # Format inline styles
+            # Inline math and bold formatting in table cells
             c = re.sub(r"\$([^$\n]+)\$", lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>", c)
+            c = re.sub(r"\\\((.+?)\\\)", lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>", c)
             c = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", c)
             c = re.sub(r"\*(.+?)\*", r"<i>\1</i>", c)
             clean_c = xml_escape(c)
@@ -270,12 +330,10 @@ def parse_markdown_table(
         return None
 
     num_cols = max(len(r) for r in rows)
-    # Normalize rows to same column count
     for r in rows:
         while len(r) < num_cols:
             r.append(Paragraph("", cell_style))
 
-    # Calculate column widths to fit total printable width of 504 pt
     total_width = 504.0
     if num_cols == 2:
         col_widths = [150.0, 354.0]
@@ -298,16 +356,9 @@ def parse_markdown_table(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]
 
-    # Alternating row background
     for row_idx in range(1, len(rows)):
-        if row_idx % 2 == 1:
-            table_style_commands.append(
-                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#ffffff"))
-            )
-        else:
-            table_style_commands.append(
-                ("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f8fafc"))
-            )
+        bg = colors.HexColor("#ffffff") if row_idx % 2 == 1 else colors.HexColor("#f8fafc")
+        table_style_commands.append(("BACKGROUND", (0, row_idx), (-1, row_idx), bg))
 
     table.setStyle(TableStyle(table_style_commands))
     return table
@@ -319,21 +370,24 @@ def parse_markdown_to_flowables(
     body_style: ParagraphStyle,
     heading_style: ParagraphStyle,
     formula_style: ParagraphStyle,
+    code_style: ParagraphStyle,
 ) -> list:
     flowables = []
     if not text:
         return flowables
 
-    # 1. Normalize linebreaks and strip isolated dollars
     raw = text.replace("\r\n", "\n").strip()
 
-    # Split text into blocks (paragraphs, formulas, headings)
-    block_pattern = re.compile(
-        r"(\$\$(?:[^\$]+?)\$\$|\\\[(?:[\s\S]+?)\\\]|\[\s*\\(?:mu|max|min|begin|neg|text|sum|frac|sigma)[^\]]+?\])",
-        re.DOTALL,
+    # 1. Clean rubric / scoring feedback if any
+    raw = re.sub(
+        r"(?:^|\n)(?:Mark Allocation|Grading Rubric|Scoring Breakdown|Reviewer Assessment):\s*[\s\S]*?(?=\n\n|\n[A-Z]|$)",
+        "\n",
+        raw,
+        flags=re.IGNORECASE,
     )
 
-    chunks = block_pattern.split(raw)
+    # 2. Split into Code Blocks vs Regular Text chunks
+    parts = re.split(r"(```[\s\S]*?```)", raw)
 
     table_cell_style = ParagraphStyle(
         "TableCell",
@@ -350,102 +404,149 @@ def parse_markdown_to_flowables(
         textColor=colors.HexColor("#0f172a"),
     )
 
-    for chunk in chunks:
-        chunk = chunk.strip()
-        if not chunk:
+    for part in parts:
+        part = part.strip()
+        if not part:
             continue
 
-        # Check if chunk is a display math formula
-        if (
-            chunk.startswith("$$")
-            or chunk.startswith("\\[")
-            or (chunk.startswith("[") and ("\\mu" in chunk or "\\begin" in chunk or "\\max" in chunk))
-        ):
-            unicode_math = latex_to_unicode(chunk)
-            formatted_math = xml_escape(unicode_math).replace("\n", "<br/>")
+        # Case A: Fenced Code Block / ASCII Diagram
+        if part.startswith("```") and part.endswith("```"):
+            code_lines = part[3:-3].strip().split("\n")
+            # If first line has a language tag like ```python or ```text, strip it
+            if code_lines and re.match(r"^[a-zA-Z0-9_\-]+$", code_lines[0].strip()):
+                code_lines = code_lines[1:]
 
-            math_p = Paragraph(f"<b>{formatted_math}</b>", formula_style)
-            # Wrap in highlighted formula table
-            formula_table = Table(
-                [[math_p]],
-                colWidths=[504],
-            )
-            formula_table.setStyle(
+            code_text = "\n".join(code_lines)
+            if not code_text.strip():
+                continue
+
+            # Render ASCII diagram / code inside a dedicated monospace container
+            pre_element = Preformatted(code_text, code_style)
+            code_table = Table([[pre_element]], colWidths=[504])
+            code_table.setStyle(
                 TableStyle([
                     ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                    ("BOX", (0, 0), (-1, -1), 0.75, colors.HexColor("#818cf8")),
-                    ("LINELEFT", (0, 0), (-1, -1), 3.5, colors.HexColor("#4f46e5")),
-                    ("PADDING", (0, 0), (-1, -1), 7),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                 ])
             )
             flowables.append(Spacer(1, 4))
-            flowables.append(formula_table)
+            flowables.append(code_table)
             flowables.append(Spacer(1, 6))
             continue
 
-        # Regular text chunk — split by paragraphs
-        paragraphs = chunk.split("\n\n")
+        # Case B: Regular text with formulas, headings, tables
+        block_pattern = re.compile(
+            r"(\$\$(?:[^\$]+?)\$\$|\\\[(?:[\s\S]+?)\\\]|\[\s*\\(?:mu|max|min|begin|neg|text|sum|frac|sigma)[^\]]+?\])",
+            re.DOTALL,
+        )
 
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
+        chunks = block_pattern.split(part)
+
+        for chunk in chunks:
+            chunk = chunk.strip()
+            if not chunk:
                 continue
 
-            # Check if this paragraph is a Markdown Table
-            lines = [l.strip() for l in para.split("\n") if l.strip()]
-            if len(lines) >= 2 and any("|" in l for l in lines) and any(re.match(r"^\|?[\s\-:|]+\|?$", l) for l in lines):
-                rendered_table = parse_markdown_table(
-                    table_text=para,
-                    cell_style=table_cell_style,
-                    header_style=table_header_style,
+            # Display Math Formula
+            if (
+                chunk.startswith("$$")
+                or chunk.startswith("\\[")
+                or (chunk.startswith("[") and ("\\mu" in chunk or "\\begin" in chunk or "\\max" in chunk))
+            ):
+                unicode_math = latex_to_unicode(chunk)
+                formatted_math = xml_escape(unicode_math).replace("\n", "<br/>")
+
+                math_p = Paragraph(f"<b>{formatted_math}</b>", formula_style)
+                formula_table = Table(
+                    [[math_p]],
+                    colWidths=[504],
                 )
-                if rendered_table:
-                    flowables.append(Spacer(1, 4))
-                    flowables.append(rendered_table)
-                    flowables.append(Spacer(1, 6))
+                formula_table.setStyle(
+                    TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
+                        ("LINELEFT", (0, 0), (-1, -1), 3, colors.HexColor("#0f766e")),
+                        ("PADDING", (0, 0), (-1, -1), 6),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ])
+                )
+                flowables.append(Spacer(1, 4))
+                flowables.append(formula_table)
+                flowables.append(Spacer(1, 6))
+                continue
+
+            # Split regular paragraphs
+            paragraphs = chunk.split("\n\n")
+
+            for para in paragraphs:
+                para = para.strip()
+                if not para:
                     continue
 
-            # Convert inline math `$ ... $` or `\( ... \)` to Unicode math
-            para = re.sub(
-                r"\$([^$\n]+)\$",
-                lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
-                para,
-            )
-            para = re.sub(
-                r"\\\((.+?)\\\)",
-                lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
-                para,
-            )
+                # Horizontal Rule e.g. --- or --
+                if re.match(r"^[-*_]{2,}$", para):
+                    flowables.append(Spacer(1, 4))
+                    flowables.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=6))
+                    continue
 
-            # Check if this paragraph is a Markdown heading (e.g. ### 1. Union)
-            if re.match(r"^#{1,6}\s+", para):
-                heading_text = re.sub(r"^#{1,6}\s*", "", para).strip()
-                heading_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", heading_text)
-                heading_text = xml_escape(heading_text)
-                flowables.append(Spacer(1, 6))
-                flowables.append(Paragraph(heading_text, heading_style))
+                # Markdown Table
+                lines = [l.strip() for l in para.split("\n") if l.strip()]
+                if len(lines) >= 2 and any("|" in l for l in lines) and any(re.match(r"^\|?[\s\-:|]+\|?$", l) for l in lines):
+                    rendered_table = parse_markdown_table(
+                        table_text=para,
+                        cell_style=table_cell_style,
+                        header_style=table_header_style,
+                    )
+                    if rendered_table:
+                        flowables.append(Spacer(1, 4))
+                        flowables.append(rendered_table)
+                        flowables.append(Spacer(1, 6))
+                        continue
+
+                # Inline math `$ ... $` or `\( ... \)`
+                para = re.sub(
+                    r"\$([^$\n]+)\$",
+                    lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
+                    para,
+                )
+                para = re.sub(
+                    r"\\\((.+?)\\\)",
+                    lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
+                    para,
+                )
+
+                # Markdown Heading (### 1. Title)
+                if re.match(r"^#{1,6}\s+", para):
+                    heading_text = re.sub(r"^#{1,6}\s*", "", para).strip()
+                    heading_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", heading_text)
+                    heading_text = xml_escape(heading_text)
+                    flowables.append(Spacer(1, 6))
+                    flowables.append(Paragraph(heading_text, heading_style))
+                    flowables.append(Spacer(1, 2))
+                    continue
+
+                # Subtopic Numbering "1. Perception and Sensory Input"
+                if re.match(r"^\d+\.\s+[A-Za-z]", para) and len(para) < 90 and not ("." in para[4:-1]):
+                    item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
+                    item_title = xml_escape(item_title)
+                    flowables.append(Spacer(1, 5))
+                    flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
+                    flowables.append(Spacer(1, 2))
+                    continue
+
+                # Standard Paragraph
+                para = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
+                para = re.sub(r"\*(.+?)\*", r"<i>\1</i>", para)
+                para = re.sub(r"^\s*[-*•]\s+(.+)$", r"• \1", para, flags=re.MULTILINE)
+
+                para_html = xml_escape(para).replace("\n", "<br/>")
+                flowables.append(Paragraph(para_html, body_style))
                 flowables.append(Spacer(1, 3))
-                continue
-
-            # Check for numbered item like "1. Union (A ∪ B)"
-            if re.match(r"^\d+\.\s+[A-Za-z]", para) and len(para) < 80 and not ("." in para[4:]):
-                item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
-                item_title = xml_escape(item_title)
-                flowables.append(Spacer(1, 5))
-                flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
-                flowables.append(Spacer(1, 2))
-                continue
-
-            # Standard paragraph formatting
-            para = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
-            para = re.sub(r"\*(.+?)\*", r"<i>\1</i>", para)
-            para = re.sub(r"^\s*[-*•]\s+(.+)$", r"• \1", para, flags=re.MULTILINE)
-
-            para_html = xml_escape(para).replace("\n", "<br/>")
-            flowables.append(Paragraph(para_html, body_style))
-            flowables.append(Spacer(1, 4))
 
     return flowables
 
@@ -468,22 +569,21 @@ def generate_solved_question_bank_pdf(
 
     styles = getSampleStyleSheet()
 
-    # ── Custom Typography Styles ─────────────────────────────────────────────
     brand_style = ParagraphStyle(
         "BrandStyle",
         parent=styles["Normal"],
         fontName=FONT_BOLD,
-        fontSize=11,
+        fontSize=10.5,
         leading=13,
-        textColor=colors.HexColor("#4f46e5"),
+        textColor=colors.HexColor("#0f766e"),
     )
 
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Title"],
         fontName=FONT_BOLD,
-        fontSize=18,
-        leading=22,
+        fontSize=17,
+        leading=21,
         textColor=colors.HexColor("#0f172a"),
         alignment=0,
     )
@@ -492,8 +592,8 @@ def generate_solved_question_bank_pdf(
         "SubtitleStyle",
         parent=styles["Normal"],
         fontName=FONT_REGULAR,
-        fontSize=9.5,
-        leading=13,
+        fontSize=9,
+        leading=12.5,
         textColor=colors.HexColor("#475569"),
     )
 
@@ -512,16 +612,16 @@ def generate_solved_question_bank_pdf(
         fontName=FONT_BOLD,
         fontSize=10.5,
         leading=14,
-        textColor=colors.HexColor("#1e1b4b"),
+        textColor=colors.HexColor("#0f172a"),
     )
 
     answer_heading_style = ParagraphStyle(
         "AnswerHeadingStyle",
         parent=styles["Normal"],
         fontName=FONT_BOLD,
-        fontSize=10,
+        fontSize=9.5,
         leading=13,
-        textColor=colors.HexColor("#312e81"),
+        textColor=colors.HexColor("#0f766e"),
     )
 
     answer_body_style = ParagraphStyle(
@@ -539,8 +639,17 @@ def generate_solved_question_bank_pdf(
         fontName=FONT_BOLD,
         fontSize=9.5,
         leading=13,
-        textColor=colors.HexColor("#1e1b4b"),
-        alignment=1,  # Center aligned
+        textColor=colors.HexColor("#0f172a"),
+        alignment=1,
+    )
+
+    code_style = ParagraphStyle(
+        "CodeStyle",
+        parent=styles["Normal"],
+        fontName=FONT_MONO,
+        fontSize=7.5,
+        leading=9.5,
+        textColor=colors.HexColor("#0f766e"),
     )
 
     source_style = ParagraphStyle(
@@ -580,12 +689,12 @@ def generate_solved_question_bank_pdf(
         TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef2f2")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#fca5a5")),
-            ("PADDING", (0, 0), (-1, -1), 7),
+            ("PADDING", (0, 0), (-1, -1), 6),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ])
     )
     story.append(disclaimer_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # 3. Stats Strip
     total_q = len(answers)
@@ -605,8 +714,8 @@ def generate_solved_question_bank_pdf(
         ])
     )
     story.append(stats_table)
-    story.append(Spacer(1, 14))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=12))
+    story.append(Spacer(1, 10))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=10))
 
     # 4. Answers List
     for index, ans in enumerate(answers, start=1):
@@ -637,7 +746,7 @@ def generate_solved_question_bank_pdf(
                         "MarkRight",
                         parent=question_title_style,
                         alignment=2,
-                        textColor=colors.HexColor("#4f46e5"),
+                        textColor=colors.HexColor("#0f766e"),
                     ),
                 ),
             ]],
@@ -645,10 +754,10 @@ def generate_solved_question_bank_pdf(
         )
         q_table.setStyle(
             TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eef2ff")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0fdfa")),
                 ("PADDING", (0, 0), (-1, -1), 6),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d2fe")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#99f6e4")),
             ])
         )
 
@@ -661,6 +770,7 @@ def generate_solved_question_bank_pdf(
             body_style=answer_body_style,
             heading_style=answer_heading_style,
             formula_style=formula_style,
+            code_style=code_style,
         )
         story.extend(answer_flowables)
 
@@ -679,8 +789,8 @@ def generate_solved_question_bank_pdf(
             story.append(Paragraph(xml_escape(source_text), source_style))
             story.append(Spacer(1, 4))
 
-        story.append(Spacer(1, 10))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=12))
+        story.append(Spacer(1, 8))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=10))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     buffer.seek(0)
