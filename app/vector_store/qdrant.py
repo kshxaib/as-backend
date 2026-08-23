@@ -9,7 +9,11 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-COLLECTION_NAME = "academicstack_resources"
+
+
+COLLECTION_NAME_GEMINI = "academicstack_resources_gemini"
+COLLECTION_NAME_OPENAI = "academicstack_resources_openai"
+
 
 # Support both Managed Qdrant Cloud (URL + API Key) and Local Self-Hosted Docker (Host + Port)
 if QDRANT_URL:
@@ -26,6 +30,16 @@ else:
     )
 
 
+def get_collection_name(provider: str) -> str:
+    if provider == "gemini":
+        return COLLECTION_NAME_GEMINI
+
+    if provider == "openai":
+        return COLLECTION_NAME_OPENAI
+
+    raise ValueError(f"Unsupported embedding provider: {provider}")
+
+
 def get_qdrant_client() -> QdrantClient:
     return client
 
@@ -38,18 +52,24 @@ def check_qdrant_connection() -> bool:
         return False
 
 
-def ensure_collection(vector_size: int = 768) -> None:
-    """Create or resize the AcademicStack Qdrant collection to match active embedding dimension."""
-    if client.collection_exists(COLLECTION_NAME):
-        collection_info = client.get_collection(COLLECTION_NAME)
+def ensure_collection(
+    collection_name: str,
+    vector_size: int,
+) -> None:
+    if client.collection_exists(collection_name):
+        collection_info = client.get_collection(collection_name)
         existing_size = collection_info.config.params.vectors.size
-        if existing_size == vector_size:
-            return
-        # If dimension changed (e.g. 1536 -> 768), recreate collection
-        client.delete_collection(COLLECTION_NAME)
+
+        if existing_size != vector_size:
+            raise ValueError(
+                f"Qdrant collection '{collection_name}' has dimension "
+                f"{existing_size}, but embedding model requires {vector_size}."
+            )
+
+        return
 
     client.create_collection(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection_name,
         vectors_config=VectorParams(
             size=vector_size,
             distance=Distance.COSINE,
@@ -59,16 +79,24 @@ def ensure_collection(vector_size: int = 768) -> None:
 
 def delete_resource_vectors(resource_id: int) -> None:
     """Delete all Qdrant vectors belonging to one resource."""
-    client.delete(
-        collection_name=COLLECTION_NAME,
-        points_selector=Filter(
-            must=[
-                FieldCondition(
-                    key="metadata.resource_id",
-                    match=MatchValue(
-                        value=resource_id,
-                    ),
-                )
-            ]
-        ),
-    )
+
+    for collection_name in (
+        COLLECTION_NAME_GEMINI,
+        COLLECTION_NAME_OPENAI,
+    ):
+        if not client.collection_exists(collection_name):
+            continue
+
+        client.delete(
+            collection_name=collection_name,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.resource_id",
+                        match=MatchValue(
+                            value=resource_id,
+                        ),
+                    )
+                ]
+            ),
+        )

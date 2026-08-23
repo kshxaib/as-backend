@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.db.database import engine
 from app.db.init_db import init_db
-from app.vector_store.qdrant import check_qdrant_connection, ensure_collection
+from app.vector_store.qdrant import check_qdrant_connection
 
 load_dotenv()
 
@@ -16,10 +16,7 @@ try:
 except Exception as e:
     print(f"Warning: init_db encountered an issue: {e}")
 
-try:
-    ensure_collection()
-except Exception:
-    pass
+
 
 from app.users.routes import router as users_router
 from app.resources.routes import router as resources_router
