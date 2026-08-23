@@ -5,15 +5,25 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue, VectorParam
 
 load_dotenv()
 
+QDRANT_URL = os.getenv("QDRANT_URL")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 COLLECTION_NAME = "academicstack_resources"
 
-client = QdrantClient(
-    host=QDRANT_HOST,
-    port=QDRANT_PORT,
-    check_compatibility=False,
-)
+# Support both Managed Qdrant Cloud (URL + API Key) and Local Self-Hosted Docker (Host + Port)
+if QDRANT_URL:
+    client = QdrantClient(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY or None,
+        check_compatibility=False,
+    )
+else:
+    client = QdrantClient(
+        host=QDRANT_HOST,
+        port=QDRANT_PORT,
+        check_compatibility=False,
+    )
 
 
 def get_qdrant_client() -> QdrantClient:

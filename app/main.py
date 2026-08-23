@@ -40,8 +40,12 @@ origins = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
 ]
-if os.getenv("FRONTEND_URL"):
-    origins.append(os.getenv("FRONTEND_URL"))
+frontend_url_env = os.getenv("FRONTEND_URL", "")
+if frontend_url_env:
+    for url in frontend_url_env.split(","):
+        clean_url = url.strip().rstrip("/")
+        if clean_url and clean_url not in origins:
+            origins.append(clean_url)
 
 app.add_middleware(
     CORSMiddleware,
