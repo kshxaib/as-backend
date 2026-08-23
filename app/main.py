@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from datetime import datetime, timezone, timedelta
 
 from app.db.database import engine
 from app.db.init_db import init_db
@@ -62,23 +63,19 @@ app.include_router(answers_router)
 app.include_router(community_router)
 
 
-import threading
-from datetime import datetime
-
-# ─── Health Check Tracker ──────────────────────────────────────────────────────
 health_tracker = {
     "hit_count": 0,
     "last_hit_at": None,
-    "server_start_time": datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
+    "server_start_time": datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p"),
 }
-_health_lock = threading.Lock()
 
-
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health_check():
     with _health_lock:
         health_tracker["hit_count"] += 1
-        health_tracker["last_hit_at"] = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+        health_tracker["last_hit_at"] = datetime.now(IST).strftime(
+            "%Y-%m-%d %I:%M:%S %p"
+        )
 
     return {
         "status": "ok",
@@ -87,8 +84,6 @@ def health_check():
         "last_hit_at": health_tracker["last_hit_at"],
         "server_start_time": health_tracker["server_start_time"],
     }
-
-
 
 
 
