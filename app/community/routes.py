@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from app.db.database import get_db
-from app.db.models import Resource, AnswerSet, QuestionBank, User
+from app.db.models import Resource, AnswerSet, QuestionBank, User, Answer
+from app.answers.service import format_answer_for_response
 
 
 router = APIRouter(
@@ -138,4 +139,46 @@ def toggle_share_answer_set(answer_set_id: int, db: Session = Depends(get_db)):
         "message": f"Answer set visibility set to {ans_set.visibility}",
         "answer_set_id": ans_set.id,
         "visibility": ans_set.visibility,
+    }
+
+
+# PUBLIC: Get all answers for a community-shared answer set (no login required)
+@router.get("/answer-sets/{answer_set_id}/answers")
+def get_community_answer_set_answers(answer_set_id: int, db: Session = Depends(get_db)):
+    """
+    Public read-only endpoint. Returns all formatted answers for a community-visible
+    answer set. Used by the in-browser Solved Answers Viewer in The Commons.
+    """
+    ans_set = db.query(AnswerSet).filter(AnswerSet.id == answer_set_id).first()
+    if not ans_set:
+        raise HTTPException(status_code=404, detail="Answer Set not found.")
+
+    if ans_set.visibility != "community":
+        raise HTTPException(
+            status_code=403,
+            detail="This answer set is not publicly shared.",
+        )
+
+    qb = db.query(QuestionBank).filter(QuestionBank.id == ans_set.question_bank_id).first()
+    author = db.query(User).filter(User.id == ans_set.user_id).first()
+
+    answers = (
+        db.query(Answer)
+        .filter(Answer.answer_set_id == answer_set_id)
+        .order_by(Answer.question_number)
+        .all()
+    )
+
+    formatted = [format_answer_for_response(a) for a in answers]
+
+    return {
+        "answer_set_id": ans_set.id,
+        "question_bank_id": ans_set.question_bank_id,
+        "question_bank_name": qb.name if qb else "Question Bank",
+        "subject": qb.subject if qb else "Subject",
+        "author_name": author.name if author else "AcademicStack Student",
+        "total_questions": ans_set.total_questions,
+        "completed_questions": ans_set.completed_questions,
+        "created_at": ans_set.created_at,
+        "answers": formatted,
     }
