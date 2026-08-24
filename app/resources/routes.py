@@ -111,7 +111,18 @@ def delete_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
             detail="Resource not found",
         )
 
-    delete_resource(db=db,resource=resource)
+    try:
+        delete_resource(db=db, resource=resource)
+    except Exception as exc:
+        try:
+            db.delete(resource)
+            db.commit()
+        except Exception as inner_exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete resource: {str(inner_exc)}",
+            )
 
     return {
         "message": "Resource deleted successfully",

@@ -72,12 +72,18 @@ def get_resources(db: Session, user_id: int | None = None) -> list[Resource]:
 
 # Delete a resource from all storage layers.
 def delete_resource(db: Session, resource: Resource) -> None:
-    # Remove indexed vectors.
-    delete_resource_vectors(resource_id=resource.id)
+    # 1. Safely remove indexed vectors from Qdrant.
+    try:
+        delete_resource_vectors(resource_id=resource.id)
+    except Exception as exc:
+        print(f"[WARN] Failed to delete Qdrant vectors for resource {resource.id}: {exc}")
 
-    # Remove actual PDF.
-    delete_pdf(public_id=resource.cloudinary_public_id)
+    # 2. Safely remove PDF from Cloudinary.
+    try:
+        delete_pdf(public_id=resource.cloudinary_public_id)
+    except Exception as exc:
+        print(f"[WARN] Failed to delete Cloudinary PDF for resource {resource.id}: {exc}")
 
-    # Remove PostgreSQL metadata.
+    # 3. Always remove PostgreSQL record.
     db.delete(resource)
     db.commit()

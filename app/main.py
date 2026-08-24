@@ -4,8 +4,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.db.database import engine
@@ -43,6 +44,8 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "https://academicstack.kshoeb.in",
+    "http://academicstack.kshoeb.in",
 ]
 
 frontend_url_env = os.getenv("FRONTEND_URL", "")
@@ -58,6 +61,7 @@ if frontend_url_env:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https?://.*(kshoeb\.in|vercel\.app|onrender\.com|localhost|127\.0\.0\.1).*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,6 +75,15 @@ app.include_router(question_banks_router)
 app.include_router(questions_router)
 app.include_router(answers_router)
 app.include_router(community_router)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Ensure any uncaught server exception always returns standard JSON and preserves CORS headers."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+    )
 
 
 _health_lock = threading.Lock()
