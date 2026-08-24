@@ -1,4 +1,5 @@
 from typing import Literal
+import os
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -43,6 +44,17 @@ def create_resource_endpoint(
         raise HTTPException(
             status_code=400,
             detail="Only PDF files are allowed.",
+        )
+
+    # Validate file size (max 10 MB). If too large, ask user to compress before upload.
+    file.file.seek(0, os.SEEK_END)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    max_size = 10 * 1024 * 1024  # 10 MB
+    if file_size > max_size:
+        raise HTTPException(
+            status_code=400,
+            detail="File size exceeds 10 MB limit. Please compress the PDF before uploading.",
         )
 
     resource = create_resource(
@@ -132,4 +144,4 @@ def download_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
             },
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
