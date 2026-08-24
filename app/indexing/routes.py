@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.indexing.service import index_resource
 from app.resources.service import get_resource
+from app.utils.error_messages import build_quota_error_detail
 
 
 router = APIRouter(
@@ -43,7 +44,14 @@ def index_resource_endpoint(resource_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as error:
+        raw_error = str(error)
+
+        # Provider quota / rate-limit failures -> 429 with a clean, user-friendly message
+        quota_detail = build_quota_error_detail(raw_error)
+        if quota_detail is not None:
+            raise HTTPException(status_code=429, detail=quota_detail)
+
         raise HTTPException(
             status_code=500,
-            detail=f"Indexing failed: {str(error)}",
+            detail=f"Indexing failed: {raw_error}",
         )
