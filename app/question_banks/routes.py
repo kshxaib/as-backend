@@ -16,13 +16,14 @@ router = APIRouter(
 # Upload a question bank PDF.
 @router.post("", response_model=QuestionBankResponse)
 def create_question_bank_endpoint(
-    user_id: int = Form(...),
+    user_id: int = Form(1),
     name: str = Form(...),
     subject: str = Form(...),
-    resource_ids: str = Form(...),
+    resource_ids: str = Form(""),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
+
     if not file.filename:
         raise HTTPException(
             status_code=400,
