@@ -44,13 +44,14 @@ def build_quota_error_detail(raw_error: str) -> str | None:
 
     if retry_match:
         wait_seconds = max(1, math.ceil(float(retry_match.group(1))))
-        wait_label = f"in about {wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+        wait_label = f"~{wait_seconds}s"
     else:
-        wait_label = "within a minute"
+        wait_label = "~60s"
+
+    model_label = f" [{model_match.group(1)}]" if model_match else ""
+    limit_label = f" · {limit_match.group(1)} RPM limit" if limit_match else ""
 
     return (
-        "AI rate limit reached while creating vector embeddings"
-        f"{context_label}. "
-        f"Your quota resets {wait_label}. Please wait for the reset and try again, "
-        "or create a different AI provider key for free and update it in settings (Profile Settings)."
+        f"⏱ Embedding rate limit hit{model_label}{limit_label}. "
+        f"Wait {wait_label} and retry, or add a different AI key in Profile Settings."
     )

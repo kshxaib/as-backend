@@ -100,3 +100,37 @@ def delete_resource_vectors(resource_id: int) -> None:
                 ]
             ),
         )
+
+
+def get_indexed_chunk_indices(collection_name: str, resource_id: int) -> set[int]:
+    """Retrieve the set of chunk indices already embedded in Qdrant for a given resource."""
+    if not client.collection_exists(collection_name):
+        return set()
+
+    try:
+        results, _ = client.scroll(
+            collection_name=collection_name,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="metadata.resource_id",
+                        match=MatchValue(
+                            value=resource_id,
+                        ),
+                    )
+                ]
+            ),
+            limit=5000,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        indices: set[int] = set()
+        for point in results:
+            if point.payload and "metadata" in point.payload:
+                idx = point.payload["metadata"].get("chunk_index")
+                if idx is not None:
+                    indices.add(int(idx))
+        return indices
+    except Exception:
+        return set()
