@@ -1,12 +1,36 @@
+"""
+PDF generation for solved question banks.
+
+Produces a professionally typeset academic solved-paper PDF from AI-generated
+Markdown + LaTeX answer content. The pipeline is:
+
+    Markdown/LaTeX  →  structured block tokens  →  ReportLab flowables
+
+Design goals (see also :mod:`app.pdf.fonts` and :mod:`app.pdf.mathrender`):
+
+* Coherent typography — a small, deliberate font hierarchy built on bundled
+  DejaVu faces (identical in dev and prod), with controlled spacing driven by
+  paragraph-style ``spaceBefore``/``spaceAfter``/``leading`` rather than a
+  scattering of manual ``Spacer`` calls.
+* Real math — LaTeX is rasterized by matplotlib mathtext (``\\frac`` is a true
+  fraction, ``x^2`` a real superscript), inline glyphs sit on the text baseline.
+* Structured Markdown — headings, paragraphs, bold/italic, ordered/unordered
+  lists, GFM tables, fenced code, block/inline math, blockquotes. LaTeX is
+  extracted *before* any Markdown/XML processing so it is never corrupted.
+* Standalone horizontal rules (``---`` / ``***`` / ``___``) are ignored, never
+  rendered as lines.
+
+Public API (unchanged): :func:`generate_solved_question_bank_pdf`.
+"""
+
 import io
 import json
-import os
 import re
 from datetime import datetime
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -15,44 +39,41 @@ from reportlab.platypus import (
     TableStyle,
     HRFlowable,
     Preformatted,
+    KeepTogether,
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+
+from app.pdf import fonts
+from app.pdf.mathrender import MathRenderer
+
+fonts.register_pdf_fonts()
 
 
-# ─── Register Modern TrueType Fonts ───────────────────────────────────────────
-FONT_REGULAR = "Helvetica"
-FONT_BOLD = "Helvetica-Bold"
-FONT_MONO = "Courier"
+# ─── Palette ──────────────────────────────────────────────────────────────────
+INK = "#1e293b"          # body text
+HEAD_DARK = "#0f172a"    # titles / strong headings
+ACCENT = "#0f766e"       # teal accent (section headings, rules)
+MUTED = "#64748b"        # metadata
+LINK = "#0284c7"         # sources
+CODE_INK = "#0f172a"
+CODE_BG = colors.HexColor("#f8fafc")
+CODE_BORDER = colors.HexColor("#e2e8f0")
+TABLE_HEAD_BG = colors.HexColor("#f1f5f9")
+TABLE_GRID = colors.HexColor("#cbd5e1")
+TABLE_ALT_BG = colors.HexColor("#f8fafc")
 
-try:
-    windows_fonts = "C:/Windows/Fonts"
-    segoe_reg = os.path.join(windows_fonts, "segoeui.ttf")
-    segoe_bold = os.path.join(windows_fonts, "segoeuib.ttf")
-    arial_reg = os.path.join(windows_fonts, "arial.ttf")
-    arial_bold = os.path.join(windows_fonts, "arialbd.ttf")
-    consolas_reg = os.path.join(windows_fonts, "consola.ttf")
+# Deliberate, reused vertical-rhythm steps (points). No ad-hoc spacers elsewhere.
+GAP_SM = 4
+GAP_MD = 7
+GAP_LG = 11
 
-    if os.path.exists(segoe_reg) and os.path.exists(segoe_bold):
-        pdfmetrics.registerFont(TTFont("ModernAcademic", segoe_reg))
-        pdfmetrics.registerFont(TTFont("ModernAcademic-Bold", segoe_bold))
-        FONT_REGULAR = "ModernAcademic"
-        FONT_BOLD = "ModernAcademic-Bold"
-    elif os.path.exists(arial_reg) and os.path.exists(arial_bold):
-        pdfmetrics.registerFont(TTFont("ModernAcademic", arial_reg))
-        pdfmetrics.registerFont(TTFont("ModernAcademic-Bold", arial_bold))
-        FONT_REGULAR = "ModernAcademic"
-        FONT_BOLD = "ModernAcademic-Bold"
-
-    if os.path.exists(consolas_reg):
-        pdfmetrics.registerFont(TTFont("ModernMono", consolas_reg))
-        FONT_MONO = "ModernMono"
-except Exception as font_err:
-    print(f"Warning: Fallback to default fonts: {font_err}")
+CONTENT_WIDTH = 504.0  # letter (612) minus 54pt margins each side
 
 
 class NumberedCanvas(canvas.Canvas):
+    """Two-pass canvas that stamps a running header/footer and page N of M."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
@@ -71,727 +92,582 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_decorations(self, page_count):
         self.saveState()
-        self.setFont(FONT_REGULAR, 8)
-        self.setFillColor(colors.HexColor("#64748b"))
+        self.setFont(fonts.FONT_SANS, 8)
+        self.setFillColor(colors.HexColor(MUTED))
 
-        # Header (pages 2+)
         if self._pageNumber > 1:
             self.drawString(54, 750, "AcademicStack • Solved Question Bank")
             self.setStrokeColor(colors.HexColor("#cbd5e1"))
             self.setLineWidth(0.5)
             self.line(54, 744, 558, 744)
 
-        # Footer
         self.setStrokeColor(colors.HexColor("#cbd5e1"))
         self.setLineWidth(0.5)
         self.line(54, 45, 558, 45)
 
-        page_str = f"Page {self._pageNumber} of {page_count}"
-        self.drawRightString(558, 32, page_str)
+        self.drawRightString(558, 32, f"Page {self._pageNumber} of {page_count}")
         self.drawString(
-            54,
-            32,
+            54, 32,
             "AcademicStack AI-Assisted Solved Paper • Strictly for Educational Reference",
         )
         self.restoreState()
 
 
-# ─── LaTeX to Unicode Mathematical Conversion ─────────────────────────────────
-def latex_to_unicode(latex_str: str) -> str:
-    if not latex_str:
-        return ""
-
-    s = latex_str.strip()
-
-    # Remove outer math delimiters
-    if s.startswith("$$") and s.endswith("$$"):
-        s = s[2:-2].strip()
-    elif s.startswith("$") and s.endswith("$"):
-        s = s[1:-1].strip()
-    elif s.startswith("\\[") and s.endswith("\\]"):
-        s = s[2:-2].strip()
-    elif s.startswith("\\(") and s.endswith("\\)"):
-        s = s[2:-2].strip()
-
-    # Handle piecewise / cases environment
-    if "\\begin{cases}" in s:
-        inner = re.search(r"\\begin\{cases\}(.*?)\\end\{cases\}", s, re.DOTALL)
-        if inner:
-            cases_content = inner.group(1).strip()
-            lines = [l.strip() for l in re.split(r"\\\\|\\\\\\\\", cases_content) if l.strip()]
-            formatted_lines = []
-            for l in lines:
-                parts = [p.strip() for p in l.split("&") if p.strip()]
-                clean_parts = "   ".join(parts)
-                formatted_lines.append(clean_parts)
-            cases_str = "{\n  " + "\n  ".join(formatted_lines) + "\n}"
-            s = s.replace(inner.group(0), cases_str)
-
-    replacements = [
-        # Sets & Logic
-        (r"\\mu", "μ"),
-        (r"\\cup", " ∪ "),
-        (r"\\cap", " ∩ "),
-        (r"\\land", " ∧ "),
-        (r"\\lor", " ∨ "),
-        (r"\\neg", "¬"),
-        (r"\\sim", "∼"),
-        (r"\\subset", " ⊂ "),
-        (r"\\subseteq", " ⊆ "),
-        (r"\\supset", " ⊃ "),
-        (r"\\supseteq", " ⊇ "),
-        (r"\\in", " ∈ "),
-        (r"\\notin", " ∉ "),
-        (r"\\emptyset", "∅"),
-        (r"\\oplus", " ⊕ "),
-        (r"\\odot", " ⊙ "),
-        (r"\\setminus", " \\ "),
-        # Relations & Operations
-        (r"\\geq", " ≥ "),
-        (r"\\ge", " ≥ "),
-        (r"\\leq", " ≤ "),
-        (r"\\le", " ≤ "),
-        (r"\\neq", " ≠ "),
-        (r"\\ne", " ≠ "),
-        (r"\\equiv", " ≡ "),
-        (r"\\times", " × "),
-        (r"\\div", " ÷ "),
-        (r"\\pm", " ± "),
-        (r"\\mp", " ∓ "),
-        (r"\\approx", " ≈ "),
-        (r"\\propto", " ∝ "),
-        (r"\\infty", "∞"),
-        (r"\\rightarrow", " → "),
-        (r"\\to", " → "),
-        (r"\\leftarrow", " ← "),
-        (r"\\Rightarrow", " ⇒ "),
-        (r"\\Leftarrow", " ⇐ "),
-        (r"\\Leftrightarrow", " ⇔ "),
-        # Greek Letters
-        (r"\\alpha", "α"),
-        (r"\\beta", "β"),
-        (r"\\gamma", "γ"),
-        (r"\\Gamma", "Γ"),
-        (r"\\delta", "δ"),
-        (r"\\Delta", "Δ"),
-        (r"\\epsilon", "ε"),
-        (r"\\varepsilon", "ε"),
-        (r"\\zeta", "ζ"),
-        (r"\\eta", "η"),
-        (r"\\theta", "θ"),
-        (r"\\Theta", "Θ"),
-        (r"\\iota", "ι"),
-        (r"\\kappa", "κ"),
-        (r"\\lambda", "λ"),
-        (r"\\Lambda", "Λ"),
-        (r"\\nu", "ν"),
-        (r"\\xi", "ξ"),
-        (r"\\pi", "π"),
-        (r"\\rho", "ρ"),
-        (r"\\sigma", "σ"),
-        (r"\\Sigma", "Σ"),
-        (r"\\tau", "τ"),
-        (r"\\phi", "φ"),
-        (r"\\Phi", "Φ"),
-        (r"\\chi", "χ"),
-        (r"\\psi", "ψ"),
-        (r"\\omega", "ω"),
-        (r"\\Omega", "Ω"),
-        # Operators & Math Functions
-        (r"\\sum", "Σ"),
-        (r"\\prod", "Π"),
-        (r"\\int", "∫"),
-        (r"\\partial", "∂"),
-        (r"\\nabla", "∇"),
-        (r"\\max", "max"),
-        (r"\\min", "min"),
-        (r"\\log", "log"),
-        (r"\\ln", "ln"),
-        (r"\\exp", "exp"),
-        (r"\\sin", "sin"),
-        (r"\\cos", "cos"),
-        (r"\\tan", "tan"),
-        (r"\\lim", "lim"),
-        # Formatting & Macros
-        (r"\\mathcal\{([A-Za-z])\}", r"\1"),
-        (r"\\mathbb\{([A-Za-z])\}", r"\1"),
-        (r"\\text\{([^}]+)\}", r"\1"),
-        (r"\\textbf\{([^}]+)\}", r"<b>\1</b>"),
-        (r"\\textit\{([^}]+)\}", r"<i>\1</i>"),
-        (r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1 / \2)"),
-        (r"\\sqrt\[([^]]+)\]\{([^}]+)\}", r"\1√(\2)"),
-        (r"\\sqrt\{([^}]+)\}", r"√(\1)"),
-        (r"\\bar\{([^}]+)\}", r"\1̄"),
-        (r"\\hat\{([^}]+)\}", r"\1̂"),
-        (r"\\vec\{([^}]+)\}", r"\1⃗"),
-        (r"\\overline\{([^}]+)\}", r"\1̄"),
-        (r"\\underline\{([^}]+)\}", r"\1"),
-        # Superscript & Subscript Cleanup
-        (r"\^\{c\}|\^c", "ᶜ"),
-        (r"\^\{2\}|\^2", "²"),
-        (r"\^\{3\}|\^3", "³"),
-        (r"\^\{n\}|\^n", "ⁿ"),
-        (r"\^\{([^}]+)\}", r"^(\1)"),
-        (r"_\{([^}]+)\}", r"_(\1)"),
-        (r"\\cdot", "·"),
-        (r"\\quad", " "),
-        (r"\\qquad", "   "),
-        (r"\\left", ""),
-        (r"\\right", ""),
-        (r"\\{", "{"),
-        (r"\\}", "}"),
-        (r"\\\\", "\n"),
-        (r"\\", ""),
-    ]
-
-    for pat, rep in replacements:
-        s = re.sub(pat, rep, s)
-
-    # Clean up multiple spaces
-    s = re.sub(r"[ \t]+", " ", s)
-    return s.strip()
-
-
-# ─── XML Safe Text Cleaner for ReportLab ──────────────────────────────────────
-ALLOWED_TAG_PATTERN = re.compile(
-    r"(</?(?:b|i|u|sub|sup|font|color)(?:\s+[^>]+)?>|<br/>)",
-    re.IGNORECASE,
+# ─── Inline text → ReportLab paragraph markup ─────────────────────────────────
+# Extract inline code and math BEFORE any Markdown/XML handling so their
+# contents are never escaped or mangled.
+_INLINE_RE = re.compile(
+    r"(?P<code>`[^`\n]+?`)"
+    r"|(?P<dmath>\$\$[^\n]+?\$\$)"
+    r"|(?P<imath>\$[^$\n]+?\$)"
+    r"|(?P<pmath>\\\([^\n]+?\\\))"
 )
 
 
-def xml_escape(text: str) -> str:
-    """Sanitizes raw HTML/Markdown into safe ReportLab-compliant XML."""
-    if not text:
-        return ""
+def _escape(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    # Normalize br tags
-    text = re.sub(r"<\s*/?\s*br\s*/?\s*>", "<br/>", text, flags=re.IGNORECASE)
 
-    # Strip disallowed HTML tags
-    disallowed = ["div", "span", "p", "ul", "ol", "li", "table", "tr", "td", "th", "tbody", "thead", "hr", "pre", "code"]
-    for tag in disallowed:
-        text = re.sub(rf"<\s*/?\s*{tag}[^>]*>", "", text, flags=re.IGNORECASE)
+def _fmt_text(segment: str) -> str:
+    """Escape prose then apply bold/italic. Underscores are left alone so that
+    identifiers like ``my_var`` are not turned into emphasis."""
+    s = _escape(segment)
+    s = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"\*(?=\S)([^*]+?)(?<=\S)\*", r"<i>\1</i>", s)
+    return s
 
-    # Escape XML entities safely
-    parts = ALLOWED_TAG_PATTERN.split(text)
-    escaped_parts = []
-    for p in parts:
-        if ALLOWED_TAG_PATTERN.match(p):
-            if p.lower() in ("<br>", "<br/>", "</br>"):
-                escaped_parts.append("<br/>")
-            else:
-                escaped_parts.append(p)
+
+def _fmt_code(code: str) -> str:
+    return f'<font face="{fonts.FONT_MONO}" size="9" color="{CODE_INK}">{_escape(code)}</font>'
+
+
+def _img_tag(im, valign: float) -> str:
+    src = im.path.replace("\\", "/")
+    return f'<img src="{src}" width="{im.width_pt:.2f}" height="{im.height_pt:.2f}" valign="{valign:.2f}"/>'
+
+
+def inline_markup(text: str, mr: MathRenderer, color_hex: str = INK, size: float = 10.0) -> str:
+    """Turn a run of inline Markdown+LaTeX into ReportLab paragraph markup."""
+    out: list[str] = []
+    pos = 0
+    for m in _INLINE_RE.finditer(text):
+        if m.start() > pos:
+            out.append(_fmt_text(text[pos:m.start()]))
+
+        if m.group("code"):
+            out.append(_fmt_code(m.group("code")[1:-1]))
         else:
-            p = re.sub(r"&(?!(?:amp|lt|gt|quot|apos|#\d+);)", "&amp;", p)
-            p = p.replace("<", "&lt;").replace(">", "&gt;")
-            escaped_parts.append(p)
+            raw = m.group("dmath") or m.group("imath") or m.group("pmath")
+            latex = raw
+            try:
+                im = mr.render_inline(latex, color_hex=color_hex, fontsize=size)
+                out.append(_img_tag(im, valign=-im.depth_pt))
+            except Exception:
+                inner = latex.strip("$")
+                if inner.startswith("\\(") and inner.endswith("\\)"):
+                    inner = inner[2:-2]
+                out.append(_fmt_code(inner))
+        pos = m.end()
 
-    return "".join(escaped_parts)
+    if pos < len(text):
+        out.append(_fmt_text(text[pos:]))
+    return "".join(out)
 
 
-# ─── Markdown Table Parser ───────────────────────────────────────────────────
-def parse_markdown_table(
-    table_text: str,
-    cell_style: ParagraphStyle,
-    header_style: ParagraphStyle,
-) -> Table | None:
-    lines = [l.strip() for l in table_text.strip().split("\n") if l.strip()]
-    if len(lines) < 2:
-        return None
+# ─── Block tokenizer ──────────────────────────────────────────────────────────
+_HR_RE = re.compile(r"^([-*_])\1{2,}$")           # 3+ of the same rule char
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_ULIST_RE = re.compile(r"^([-*+•])\s+(.*)$")
+_OLIST_RE = re.compile(r"^(\d+)[.)]\s+(.*)$")
+_BOLD_LINE_RE = re.compile(r"^\*\*(.+)\*\*$")
 
-    rows = []
-    header_found = False
 
-    for line in lines:
-        if re.match(r"^\|?[\s\-:|]+\|?$", line) and "-" in line:
-            header_found = True
+def _is_table_sep(line: str) -> bool:
+    s = line.strip()
+    return bool(re.match(r"^\|?[\s:|-]+\|?$", s)) and "-" in s and "|" in s
+
+
+def _leading_spaces(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def tokenize_blocks(text: str) -> list[tuple]:
+    """Parse answer Markdown into a flat list of ``(kind, payload...)`` blocks.
+
+    Kinds: ``heading`` (level, text), ``subheading`` (text), ``para`` (text),
+    ``list`` (items[(ordered, level, text)]), ``table`` (raw_text),
+    ``code`` (lang, code), ``mathblock`` (latex), ``quote`` (text).
+    """
+    lines = text.replace("\r\n", "\n").split("\n")
+    blocks: list[tuple] = []
+    i, n = 0, len(lines)
+
+    while i < n:
+        raw = lines[i]
+        line = raw.strip()
+
+        if not line:
+            i += 1
             continue
 
-        raw_cells = [c.strip() for c in line.strip("|").split("|")]
-        if not any(raw_cells):
+        # Fenced code / diagram
+        if line.startswith("```") or line.startswith("~~~"):
+            fence = line[:3]
+            lang = line[3:].strip().lower()
+            buf, j = [], i + 1
+            while j < n and not lines[j].strip().startswith(fence):
+                buf.append(lines[j])
+                j += 1
+            blocks.append(("code", lang, "\n".join(buf)))
+            i = j + 1
             continue
 
-        cell_paras = []
-        for c in raw_cells:
-            # Inline math and bold formatting in table cells
-            c = re.sub(r"\$([^$\n]+)\$", lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>", c)
-            c = re.sub(r"\\\((.+?)\\\)", lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>", c)
-            c = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", c)
-            c = re.sub(r"\*(.+?)\*", r"<i>\1</i>", c)
-            clean_c = xml_escape(c)
+        # Display math: $$ ... $$  or  \[ ... \]  (single or multi-line)
+        for open_d, close_d in (("$$", "$$"), ("\\[", "\\]")):
+            if line.startswith(open_d):
+                if line.endswith(close_d) and len(line) > len(open_d) + len(close_d) - 1:
+                    inner = line[len(open_d):len(line) - len(close_d)]
+                    blocks.append(("mathblock", inner.strip()))
+                    i += 1
+                else:
+                    buf, j = [line[len(open_d):]], i + 1
+                    while j < n and close_d not in lines[j]:
+                        buf.append(lines[j])
+                        j += 1
+                    if j < n:
+                        tail = lines[j]
+                        buf.append(tail[:tail.find(close_d)])
+                        j += 1
+                    blocks.append(("mathblock", "\n".join(buf).strip()))
+                    i = j
+                break
+        else:
+            # Standalone horizontal rule → ignore entirely
+            if _HR_RE.match(line):
+                i += 1
+                continue
 
-            current_style = header_style if (len(rows) == 0 and not header_found) else cell_style
-            cell_paras.append(Paragraph(clean_c, current_style))
+            # Heading
+            h = _HEADING_RE.match(line)
+            if h:
+                blocks.append(("heading", len(h.group(1)), h.group(2).strip()))
+                i += 1
+                continue
 
-        if cell_paras:
-            rows.append(cell_paras)
+            # Table (needs a separator row directly under the header row)
+            if "|" in raw and i + 1 < n and _is_table_sep(lines[i + 1]):
+                buf, j = [raw], i + 1
+                while j < n and "|" in lines[j] and lines[j].strip():
+                    buf.append(lines[j])
+                    j += 1
+                blocks.append(("table", "\n".join(buf)))
+                i = j
+                continue
 
-    if not rows:
-        return None
+            # Blockquote
+            if line.startswith(">"):
+                buf, j = [], i
+                while j < n and lines[j].strip().startswith(">"):
+                    buf.append(re.sub(r"^\s*>\s?", "", lines[j]))
+                    j += 1
+                blocks.append(("quote", " ".join(s.strip() for s in buf if s.strip())))
+                i = j
+                continue
 
-    num_cols = max(len(r) for r in rows)
-    for r in rows:
-        while len(r) < num_cols:
-            r.append(Paragraph("", cell_style))
+            # List (unordered / ordered, with simple nesting by indent)
+            if _ULIST_RE.match(line) or _OLIST_RE.match(line):
+                items, j = [], i
+                while j < n:
+                    cur = lines[j]
+                    cs = cur.strip()
+                    if not cs:
+                        # allow a single blank line only if the next line continues the list
+                        if j + 1 < n and (_ULIST_RE.match(lines[j + 1].strip()) or _OLIST_RE.match(lines[j + 1].strip())):
+                            j += 1
+                            continue
+                        break
+                    mu = _ULIST_RE.match(cs)
+                    mo = _OLIST_RE.match(cs)
+                    if not mu and not mo:
+                        break
+                    level = min(_leading_spaces(cur) // 2, 3)
+                    if mu:
+                        items.append((None, level, mu.group(2).strip()))
+                    else:
+                        items.append((mo.group(1), level, mo.group(2).strip()))
+                    j += 1
+                blocks.append(("list", items))
+                i = j
+                continue
 
-    total_width = 504.0
-    if num_cols == 2:
-        col_widths = [150.0, 354.0]
-    elif num_cols == 3:
-        col_widths = [120.0, 192.0, 192.0]
-    elif num_cols == 4:
-        col_widths = [90.0, 138.0, 138.0, 138.0]
+            # Paragraph: gather consecutive lines until a blank line or a line
+            # that begins a different block.
+            buf, j = [line], i + 1
+            while j < n:
+                nxt = lines[j]
+                ns = nxt.strip()
+                if not ns:
+                    break
+                if (ns.startswith("```") or ns.startswith("~~~") or ns.startswith("$$")
+                        or ns.startswith("\\[") or _HEADING_RE.match(ns) or _HR_RE.match(ns)
+                        or _ULIST_RE.match(ns) or _OLIST_RE.match(ns) or ns.startswith(">")
+                        or ("|" in nxt and j + 1 < n and _is_table_sep(lines[j + 1]))):
+                    break
+                buf.append(ns)
+                j += 1
+            para = " ".join(buf).strip()
+            bl = _BOLD_LINE_RE.match(para)
+            if bl:
+                blocks.append(("subheading", bl.group(1).strip()))
+            else:
+                blocks.append(("para", para))
+            i = j
+
+    return blocks
+
+
+# ─── Block renderers ──────────────────────────────────────────────────────────
+def _render_code(lang: str, code: str, st) -> list:
+    code = code.rstrip("\n")
+    if not code.strip():
+        return []
+
+    lines = code.split("\n")
+    flowables = []
+
+    # Diagram DSLs (mermaid / graphviz) can't be rendered as pictures here, so
+    # show them clearly as labeled source, per product decision.
+    if lang in ("mermaid", "dot", "graphviz"):
+        flowables.append(Paragraph(f"Diagram source ({lang})", st.caption))
+
+    # Fit the monospace font so the widest line does not clip (preserves ASCII
+    # diagram alignment without wrapping).
+    base = 8.5
+    longest = max((pdfmetrics.stringWidth(ln, fonts.FONT_MONO, base) for ln in lines), default=0.0)
+    avail = CONTENT_WIDTH - 16  # cell padding
+    size = base
+    if longest > avail and longest > 0:
+        size = max(6.0, base * (avail / longest))
+    code_style = ParagraphStyle(
+        "CodeBlock", fontName=fonts.FONT_MONO, fontSize=size,
+        leading=size * 1.25, textColor=colors.HexColor(CODE_INK),
+    )
+
+    box = Table([[Preformatted(code, code_style)]], colWidths=[CONTENT_WIDTH])
+    box.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), CODE_BG),
+        ("BOX", (0, 0), (-1, -1), 0.5, CODE_BORDER),
+        ("LINELEFT", (0, 0), (-1, -1), 2.5, colors.HexColor(ACCENT)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    flowables.append(box)
+    return [Spacer(1, GAP_SM), KeepTogether(flowables), Spacer(1, GAP_MD)]
+
+
+def _render_table(raw: str, mr: MathRenderer, st) -> list:
+    rows_txt = [l for l in raw.split("\n") if l.strip()]
+    parsed: list[list[str]] = []
+    for line in rows_txt:
+        if _is_table_sep(line):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        parsed.append(cells)
+    if len(parsed) < 1:
+        return []
+
+    ncols = max(len(r) for r in parsed)
+    data = []
+    for r_idx, cells in enumerate(parsed):
+        while len(cells) < ncols:
+            cells.append("")
+        style = st.table_head if r_idx == 0 else st.table_cell
+        data.append([Paragraph(inline_markup(c, mr, color_hex=INK, size=style.fontSize), style) for c in cells])
+
+    if ncols == 2:
+        col_widths = [CONTENT_WIDTH * 0.3, CONTENT_WIDTH * 0.7]
+    elif ncols == 3:
+        col_widths = [CONTENT_WIDTH * 0.24, CONTENT_WIDTH * 0.38, CONTENT_WIDTH * 0.38]
+    elif ncols == 4:
+        col_widths = [CONTENT_WIDTH * 0.18] + [CONTENT_WIDTH * 0.82 / 3] * 3
     else:
-        col_widths = [total_width / num_cols] * num_cols
+        col_widths = [CONTENT_WIDTH / ncols] * ncols
 
-    table = Table(rows, colWidths=col_widths)
-    table_style_commands = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1e293b")),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), TABLE_HEAD_BG),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor(INK)),
+        ("GRID", (0, 0), (-1, -1), 0.5, TABLE_GRID),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]
-
-    for row_idx in range(1, len(rows)):
-        bg = colors.HexColor("#ffffff") if row_idx % 2 == 1 else colors.HexColor("#f8fafc")
-        table_style_commands.append(("BACKGROUND", (0, row_idx), (-1, row_idx), bg))
-
-    table.setStyle(TableStyle(table_style_commands))
-    return table
+    for r_idx in range(1, len(data)):
+        if r_idx % 2 == 0:
+            cmds.append(("BACKGROUND", (0, r_idx), (-1, r_idx), TABLE_ALT_BG))
+    table.setStyle(TableStyle(cmds))
+    return [Spacer(1, GAP_SM), table, Spacer(1, GAP_MD)]
 
 
-# ─── Parse Markdown into ReportLab Flowable Elements ─────────────────────────
-def parse_markdown_to_flowables(
-    text: str,
-    body_style: ParagraphStyle,
-    heading_style: ParagraphStyle,
-    formula_style: ParagraphStyle,
-    code_style: ParagraphStyle,
-) -> list:
+def _render_mathblock(latex: str, mr: MathRenderer, st) -> list:
+    disp = mr.render_display(latex, color_hex=HEAD_DARK, fontsize=12.5)
+    inner: list = []
+    for k, f in enumerate(disp):
+        if k > 0:
+            inner.append(Spacer(1, 2))
+        inner.append(f)
+    return [Spacer(1, GAP_SM), KeepTogether(inner), Spacer(1, GAP_MD)]
+
+
+def _render_list(items: list, mr: MathRenderer, st) -> list:
     flowables = []
-    if not text:
-        return flowables
-
-    raw = text.replace("\r\n", "\n").strip()
-
-    # 1. Clean rubric / scoring feedback if any
-    raw = re.sub(
-        r"(?:^|\n)(?:Mark Allocation|Grading Rubric|Scoring Breakdown|Reviewer Assessment):\s*[\s\S]*?(?=\n\n|\n[A-Z]|$)",
-        "\n",
-        raw,
-        flags=re.IGNORECASE,
-    )
-
-    # 2. Split into Code Blocks vs Regular Text chunks
-    parts = re.split(r"(```[\s\S]*?```)", raw)
-
-    table_cell_style = ParagraphStyle(
-        "TableCell",
-        parent=body_style,
-        fontSize=8.5,
-        leading=11.5,
-    )
-    table_header_style = ParagraphStyle(
-        "TableHeader",
-        parent=heading_style,
-        fontSize=9,
-        leading=12,
-        fontName=FONT_BOLD,
-        textColor=colors.HexColor("#0f172a"),
-    )
-
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-
-        # Case A: Fenced Code Block / ASCII Diagram
-        if part.startswith("```") and part.endswith("```"):
-            code_lines = part[3:-3].strip().split("\n")
-            # If first line has a language tag like ```python or ```text, strip it
-            if code_lines and re.match(r"^[a-zA-Z0-9_\-]+$", code_lines[0].strip()):
-                code_lines = code_lines[1:]
-
-            code_text = "\n".join(code_lines)
-            if not code_text.strip():
-                continue
-
-            # Render ASCII diagram / code inside a dedicated monospace container
-            pre_element = Preformatted(code_text, code_style)
-            code_table = Table([[pre_element]], colWidths=[504])
-            code_table.setStyle(
-                TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ])
-            )
-            flowables.append(Spacer(1, 4))
-            flowables.append(code_table)
-            flowables.append(Spacer(1, 6))
-            continue
-
-        # Case B: Regular text with formulas, headings, tables
-        block_pattern = re.compile(
-            r"(\$\$(?:[^\$]+?)\$\$|\\\[(?:[\s\S]+?)\\\]|\[\s*\\(?:mu|max|min|begin|neg|text|sum|frac|sigma)[^\]]+?\])",
-            re.DOTALL,
+    for marker, level, text in items:
+        ordered = marker is not None
+        style = st.list_ordered if ordered else st.list_item
+        base_indent = 14 + level * 14
+        istyle = ParagraphStyle(
+            f"li{level}{'o' if ordered else 'u'}", parent=style,
+            leftIndent=base_indent, bulletIndent=base_indent - 12,
         )
-
-        chunks = block_pattern.split(part)
-
-        for chunk in chunks:
-            chunk = chunk.strip()
-            if not chunk:
-                continue
-
-            # Display Math Formula
-            if (
-                chunk.startswith("$$")
-                or chunk.startswith("\\[")
-                or (chunk.startswith("[") and ("\\mu" in chunk or "\\begin" in chunk or "\\max" in chunk))
-            ):
-                unicode_math = latex_to_unicode(chunk)
-                formatted_math = xml_escape(unicode_math).replace("\n", "<br/>")
-
-                math_p = Paragraph(f"<b>{formatted_math}</b>", formula_style)
-                formula_table = Table(
-                    [[math_p]],
-                    colWidths=[504],
-                )
-                formula_table.setStyle(
-                    TableStyle([
-                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-                        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
-                        ("LINELEFT", (0, 0), (-1, -1), 3, colors.HexColor("#0f766e")),
-                        ("PADDING", (0, 0), (-1, -1), 6),
-                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ])
-                )
-                flowables.append(Spacer(1, 4))
-                flowables.append(formula_table)
-                flowables.append(Spacer(1, 6))
-                continue
-
-            # Split regular paragraphs
-            paragraphs = chunk.split("\n\n")
-
-            for para in paragraphs:
-                para = para.strip()
-                if not para:
-                    continue
-
-                # Horizontal Rule e.g. --- or --
-                if re.match(r"^[-*_]{2,}$", para):
-                    flowables.append(Spacer(1, 4))
-                    flowables.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=6))
-                    continue
-
-                # Markdown Table
-                lines = [l.strip() for l in para.split("\n") if l.strip()]
-                if len(lines) >= 2 and any("|" in l for l in lines) and any(re.match(r"^\|?[\s\-:|]+\|?$", l) for l in lines):
-                    rendered_table = parse_markdown_table(
-                        table_text=para,
-                        cell_style=table_cell_style,
-                        header_style=table_header_style,
-                    )
-                    if rendered_table:
-                        flowables.append(Spacer(1, 4))
-                        flowables.append(rendered_table)
-                        flowables.append(Spacer(1, 6))
-                        continue
-
-                # Inline math `$ ... $` or `\( ... \)`
-                para = re.sub(
-                    r"\$([^$\n]+)\$",
-                    lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
-                    para,
-                )
-                para = re.sub(
-                    r"\\\((.+?)\\\)",
-                    lambda m: f"<b>{latex_to_unicode(m.group(1))}</b>",
-                    para,
-                )
-
-                # Markdown Heading (### 1. Title)
-                if re.match(r"^#{1,6}\s+", para):
-                    heading_text = re.sub(r"^#{1,6}\s*", "", para).strip()
-                    heading_text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", heading_text)
-                    heading_text = xml_escape(heading_text)
-                    flowables.append(Spacer(1, 6))
-                    flowables.append(Paragraph(heading_text, heading_style))
-                    flowables.append(Spacer(1, 2))
-                    continue
-
-                # Subtopic Numbering "1. Perception and Sensory Input"
-                if re.match(r"^\d+\.\s+[A-Za-z]", para) and len(para) < 90 and not ("." in para[4:-1]):
-                    item_title = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
-                    item_title = xml_escape(item_title)
-                    flowables.append(Spacer(1, 5))
-                    flowables.append(Paragraph(f"<b>{item_title}</b>", heading_style))
-                    flowables.append(Spacer(1, 2))
-                    continue
-
-                # Standard Paragraph
-                para = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", para)
-                para = re.sub(r"\*(.+?)\*", r"<i>\1</i>", para)
-                para = re.sub(r"^\s*[-*•]\s+(.+)$", r"• \1", para, flags=re.MULTILINE)
-
-                para_html = xml_escape(para).replace("\n", "<br/>")
-                flowables.append(Paragraph(para_html, body_style))
-                flowables.append(Spacer(1, 3))
-
+        markup = inline_markup(text, mr, color_hex=INK, size=style.fontSize)
+        bullet = f"{marker}." if ordered else "•"
+        flowables.append(Paragraph(markup, istyle, bulletText=bullet))
     return flowables
 
 
-# ─── Main PDF Generation Function ─────────────────────────────────────────────
+def render_blocks(blocks: list[tuple], mr: MathRenderer, st) -> list:
+    out: list = []
+    for block in blocks:
+        kind = block[0]
+        if kind == "heading":
+            _, level, text = block
+            if level <= 3:
+                style, color = st.h_section, ACCENT
+            else:
+                style, color = st.h_sub, HEAD_DARK
+            out.append(Paragraph(inline_markup(text, mr, color_hex=color, size=style.fontSize), style))
+        elif kind == "subheading":
+            out.append(Paragraph(inline_markup(block[1], mr, color_hex=HEAD_DARK, size=st.h_sub.fontSize), st.h_sub))
+        elif kind == "para":
+            out.append(Paragraph(inline_markup(block[1], mr, color_hex=INK, size=st.body.fontSize), st.body))
+        elif kind == "list":
+            out.extend(_render_list(block[1], mr, st))
+        elif kind == "table":
+            out.extend(_render_table(block[1], mr, st))
+        elif kind == "code":
+            out.extend(_render_code(block[1], block[2], st))
+        elif kind == "mathblock":
+            out.extend(_render_mathblock(block[1], mr, st))
+        elif kind == "quote":
+            out.append(_render_quote(block[1], mr, st))
+    return out
+
+
+def _render_quote(text: str, mr: MathRenderer, st):
+    para = Paragraph(inline_markup(text, mr, color_hex=MUTED, size=st.quote.fontSize), st.quote)
+    box = Table([[para]], colWidths=[CONTENT_WIDTH])
+    box.setStyle(TableStyle([
+        ("LINELEFT", (0, 0), (-1, -1), 2.5, colors.HexColor("#cbd5e1")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    return box
+
+
+# ─── Style sheet ────────────────────────────────────────────────────────────
+class _Styles:
+    def __init__(self):
+        self.brand = ParagraphStyle(
+            "Brand", fontName=fonts.FONT_SANS_BOLD, fontSize=10.5, leading=13,
+            textColor=colors.HexColor(ACCENT), spaceAfter=2,
+        )
+        self.title = ParagraphStyle(
+            "Title", fontName=fonts.FONT_SANS_BOLD, fontSize=18, leading=22,
+            textColor=colors.HexColor(HEAD_DARK), spaceAfter=2,
+        )
+        self.subtitle = ParagraphStyle(
+            "Subtitle", fontName=fonts.FONT_SANS, fontSize=9, leading=12.5,
+            textColor=colors.HexColor(MUTED),
+        )
+        self.disclaimer = ParagraphStyle(
+            "Disclaimer", fontName=fonts.FONT_SANS, fontSize=8, leading=11,
+            textColor=colors.HexColor("#b91c1c"),
+        )
+        self.q_title = ParagraphStyle(
+            "QTitle", fontName=fonts.FONT_SANS_BOLD, fontSize=11.5, leading=15,
+            textColor=colors.HexColor(HEAD_DARK),
+        )
+        self.q_marks = ParagraphStyle(
+            "QMarks", fontName=fonts.FONT_SANS_BOLD, fontSize=10, leading=15,
+            textColor=colors.HexColor(ACCENT), alignment=2,
+        )
+        self.h_section = ParagraphStyle(
+            "HSection", fontName=fonts.FONT_SANS_BOLD, fontSize=11.5, leading=15,
+            textColor=colors.HexColor(ACCENT), spaceBefore=GAP_LG, spaceAfter=GAP_SM,
+            keepWithNext=True,
+        )
+        self.h_sub = ParagraphStyle(
+            "HSub", fontName=fonts.FONT_SANS_BOLD, fontSize=10.5, leading=14,
+            textColor=colors.HexColor(HEAD_DARK), spaceBefore=GAP_MD, spaceAfter=3,
+            keepWithNext=True,
+        )
+        self.body = ParagraphStyle(
+            "Body", fontName=fonts.FONT_SERIF, fontSize=10, leading=15,
+            textColor=colors.HexColor(INK), spaceAfter=GAP_MD, alignment=0,
+        )
+        self.list_item = ParagraphStyle(
+            "ListItem", fontName=fonts.FONT_SERIF, fontSize=10, leading=14.5,
+            textColor=colors.HexColor(INK), spaceAfter=3,
+        )
+        self.list_ordered = ParagraphStyle(
+            "ListOrdered", parent=self.list_item,
+        )
+        self.quote = ParagraphStyle(
+            "Quote", fontName=fonts.FONT_SERIF_ITALIC, fontSize=10, leading=14.5,
+            textColor=colors.HexColor(MUTED),
+        )
+        self.caption = ParagraphStyle(
+            "Caption", fontName=fonts.FONT_SANS, fontSize=8, leading=11,
+            textColor=colors.HexColor(MUTED), spaceAfter=2,
+        )
+        self.table_cell = ParagraphStyle(
+            "TableCell", fontName=fonts.FONT_SERIF, fontSize=8.5, leading=12,
+            textColor=colors.HexColor(INK),
+        )
+        self.table_head = ParagraphStyle(
+            "TableHead", fontName=fonts.FONT_SANS_BOLD, fontSize=9, leading=12,
+            textColor=colors.HexColor(HEAD_DARK),
+        )
+        self.source = ParagraphStyle(
+            "Source", fontName=fonts.FONT_SANS, fontSize=8.5, leading=11.5,
+            textColor=colors.HexColor(LINK),
+        )
+
+
+# ─── Main entry point ─────────────────────────────────────────────────────────
 def generate_solved_question_bank_pdf(
     question_bank_name: str,
     subject: str,
     answers: list[dict],
 ) -> bytes:
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=54,
-        rightMargin=54,
-        topMargin=60,
-        bottomMargin=55,
-    )
+    fonts.register_pdf_fonts()
+    st = _Styles()
+    mr = MathRenderer()
 
-    styles = getSampleStyleSheet()
-
-    brand_style = ParagraphStyle(
-        "BrandStyle",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=10.5,
-        leading=13,
-        textColor=colors.HexColor("#0f766e"),
-    )
-
-    title_style = ParagraphStyle(
-        "TitleStyle",
-        parent=styles["Title"],
-        fontName=FONT_BOLD,
-        fontSize=17,
-        leading=21,
-        textColor=colors.HexColor("#0f172a"),
-        alignment=0,
-    )
-
-    subtitle_style = ParagraphStyle(
-        "SubtitleStyle",
-        parent=styles["Normal"],
-        fontName=FONT_REGULAR,
-        fontSize=9,
-        leading=12.5,
-        textColor=colors.HexColor("#475569"),
-    )
-
-    disclaimer_style = ParagraphStyle(
-        "DisclaimerStyle",
-        parent=styles["Normal"],
-        fontName=FONT_REGULAR,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor("#b91c1c"),
-    )
-
-    question_title_style = ParagraphStyle(
-        "QuestionTitleStyle",
-        parent=styles["Heading2"],
-        fontName=FONT_BOLD,
-        fontSize=10.5,
-        leading=14,
-        textColor=colors.HexColor("#0f172a"),
-    )
-
-    answer_heading_style = ParagraphStyle(
-        "AnswerHeadingStyle",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor("#0f766e"),
-    )
-
-    answer_body_style = ParagraphStyle(
-        "AnswerBodyStyle",
-        parent=styles["BodyText"],
-        fontName=FONT_REGULAR,
-        fontSize=9,
-        leading=13.5,
-        textColor=colors.HexColor("#1e293b"),
-    )
-
-    formula_style = ParagraphStyle(
-        "FormulaStyle",
-        parent=styles["Normal"],
-        fontName=FONT_BOLD,
-        fontSize=9.5,
-        leading=13,
-        textColor=colors.HexColor("#0f172a"),
-        alignment=1,
-    )
-
-    code_style = ParagraphStyle(
-        "CodeStyle",
-        parent=styles["Normal"],
-        fontName=FONT_MONO,
-        fontSize=7.5,
-        leading=9.5,
-        textColor=colors.HexColor("#0f766e"),
-    )
-
-    source_style = ParagraphStyle(
-        "SourceStyle",
-        parent=styles["Normal"],
-        fontName=FONT_REGULAR,
-        fontSize=8,
-        leading=11,
-        textColor=colors.HexColor("#0284c7"),
-    )
-
-    story = []
-
-    # 1. Header Banner
-    story.append(Paragraph("ACADEMICSTACK SOLUTIONS", brand_style))
-    story.append(Spacer(1, 3))
-    story.append(Paragraph(f"{subject} — {question_bank_name}", title_style))
-    story.append(Spacer(1, 3))
-    story.append(
-        Paragraph(
-            f"Generated on {datetime.utcnow().strftime('%B %d, %Y')} • RAG Grounded & AI Verified Answer Set",
-            subtitle_style,
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=letter,
+            leftMargin=54, rightMargin=54, topMargin=60, bottomMargin=55,
+            title=f"{subject} - {question_bank_name}", author="AcademicStack",
         )
-    )
-    story.append(Spacer(1, 8))
 
-    # 2. Disclaimer Callout Box
-    disclaimer_html = (
-        "<b>Notice:</b> This document contains AI-generated examination solutions grounded in verified study "
-        "materials. It is designed to assist exam preparation, conceptual clarity, and revision."
-    )
-    disclaimer_table = Table(
-        [[Paragraph(disclaimer_html, disclaimer_style)]],
-        colWidths=[504],
-    )
-    disclaimer_table.setStyle(
-        TableStyle([
+        story: list = []
+
+        # 1. Brand header
+        story.append(Paragraph("ACADEMICSTACK SOLUTIONS", st.brand))
+        story.append(Paragraph(f"{_escape(subject)} — {_escape(question_bank_name)}", st.title))
+        story.append(Paragraph(
+            f"Generated on {datetime.utcnow().strftime('%B %d, %Y')} • RAG Grounded & AI Verified Answer Set",
+            st.subtitle,
+        ))
+        story.append(Spacer(1, GAP_MD))
+
+        # 2. Disclaimer callout
+        disclaimer = (
+            "<b>Notice:</b> This document contains AI-generated examination solutions grounded in verified "
+            "study materials. It is designed to assist exam preparation, conceptual clarity, and revision."
+        )
+        disc_box = Table([[Paragraph(disclaimer, st.disclaimer)]], colWidths=[CONTENT_WIDTH])
+        disc_box.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef2f2")),
             ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#fca5a5")),
             ("PADDING", (0, 0), (-1, -1), 6),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ])
-    )
-    story.append(disclaimer_table)
-    story.append(Spacer(1, 8))
+        ]))
+        story.append(disc_box)
+        story.append(Spacer(1, GAP_MD))
 
-    # 3. Stats Strip
-    total_q = len(answers)
-    total_marks = sum(int(a.get("marks") or 0) for a in answers)
-    stats_data = [[
-        Paragraph(f"<b>Total Questions:</b> {total_q}", subtitle_style),
-        Paragraph(f"<b>Total Marks:</b> {total_marks}", subtitle_style),
-        Paragraph(f"<b>Subject:</b> {subject}", subtitle_style),
-    ]]
-    stats_table = Table(stats_data, colWidths=[168, 168, 168])
-    stats_table.setStyle(
-        TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        # 3. Stats strip
+        total_q = len(answers)
+        total_marks = sum(int(a.get("marks") or 0) for a in answers)
+        stats = [[
+            Paragraph(f"<b>Total Questions:</b> {total_q}", st.subtitle),
+            Paragraph(f"<b>Total Marks:</b> {total_marks}", st.subtitle),
+            Paragraph(f"<b>Subject:</b> {_escape(subject)}", st.subtitle),
+        ]]
+        stats_table = Table(stats, colWidths=[CONTENT_WIDTH / 3] * 3)
+        stats_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), CODE_BG),
+            ("BOX", (0, 0), (-1, -1), 0.5, CODE_BORDER),
             ("PADDING", (0, 0), (-1, -1), 5),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ])
-    )
-    story.append(stats_table)
-    story.append(Spacer(1, 10))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cbd5e1"), spaceAfter=10))
+        ]))
+        story.append(stats_table)
+        story.append(Spacer(1, GAP_MD))
+        story.append(HRFlowable(width="100%", thickness=1, color=TABLE_GRID, spaceAfter=GAP_MD))
 
-    # 4. Answers List
-    for index, ans in enumerate(answers, start=1):
-        q_num = ans.get("question_number", index)
-        q_text = ans.get("question_text", "Untitled Question")
-        marks = ans.get("marks", 0)
-        content = ans.get("content") or "<i>Answer not generated.</i>"
-        raw_sources = ans.get("sources") or []
+        # 4. Per-question sections
+        for index, ans in enumerate(answers, start=1):
+            q_num = ans.get("question_number", index)
+            q_text = ans.get("question_text", "Untitled Question")
+            marks = ans.get("marks", 0)
+            content = ans.get("content") or "*Answer not generated.*"
 
-        if isinstance(raw_sources, str):
-            try:
-                sources_list = json.loads(raw_sources)
-            except Exception:
-                sources_list = []
-        else:
-            sources_list = raw_sources
+            raw_sources = ans.get("sources") or []
+            if isinstance(raw_sources, str):
+                try:
+                    sources_list = json.loads(raw_sources)
+                except Exception:
+                    sources_list = []
+            else:
+                sources_list = raw_sources
 
-        # Question Header Box
-        q_header_text = f"<b>Q{q_num}. {xml_escape(q_text)}</b>"
-        q_marks_text = f"<b>[{marks} Marks]</b>"
-
-        q_table = Table(
-            [[
-                Paragraph(q_header_text, question_title_style),
-                Paragraph(
-                    q_marks_text,
-                    ParagraphStyle(
-                        "MarkRight",
-                        parent=question_title_style,
-                        alignment=2,
-                        textColor=colors.HexColor("#0f766e"),
-                    ),
-                ),
-            ]],
-            colWidths=[420, 84],
-        )
-        q_table.setStyle(
-            TableStyle([
+            # Question header box
+            q_box = Table(
+                [[
+                    Paragraph(f"Q{q_num}. {inline_markup(str(q_text), mr, color_hex=HEAD_DARK, size=st.q_title.fontSize)}", st.q_title),
+                    Paragraph(f"[{marks} Marks]", st.q_marks),
+                ]],
+                colWidths=[CONTENT_WIDTH - 84, 84],
+            )
+            q_box.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0fdfa")),
-                ("PADDING", (0, 0), (-1, -1), 6),
+                ("PADDING", (0, 0), (-1, -1), 7),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#99f6e4")),
-            ])
-        )
+            ]))
+            story.append(KeepTogether([q_box, Spacer(1, GAP_SM)]))
 
-        story.append(q_table)
-        story.append(Spacer(1, 6))
+            # Answer body
+            blocks = tokenize_blocks(content)
+            story.extend(render_blocks(blocks, mr, st))
 
-        # Parse structured answer content and formula boxes
-        answer_flowables = parse_markdown_to_flowables(
-            content,
-            body_style=answer_body_style,
-            heading_style=answer_heading_style,
-            formula_style=formula_style,
-            code_style=code_style,
-        )
-        story.extend(answer_flowables)
+            # Sources footer
+            if sources_list:
+                labels = []
+                for s in sources_list:
+                    res = s.get("resource_name", "Material")
+                    p = s.get("page", "")
+                    ch = s.get("chapter", "")
+                    label = f"{res} (Pg {p})" if p and p != "N/A" else res
+                    if ch and ch != "General":
+                        label += f" • {ch}"
+                    labels.append(label)
+                story.append(Spacer(1, GAP_SM))
+                story.append(Paragraph(f"<b>Verified Sources:</b> {_escape(', '.join(labels))}", st.source))
 
-        # Sources footer
-        if sources_list:
-            source_labels = []
-            for s in sources_list:
-                res = s.get("resource_name", "Material")
-                p = s.get("page", "")
-                ch = s.get("chapter", "")
-                label = f"{res} (Pg {p})" if p and p != "N/A" else res
-                if ch and ch != "General":
-                    label += f" • {ch}"
-                source_labels.append(label)
-            source_text = f"<b>Verified Sources:</b> {', '.join(source_labels)}"
-            story.append(Paragraph(xml_escape(source_text), source_style))
-            story.append(Spacer(1, 4))
+            story.append(Spacer(1, GAP_MD))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=CODE_BORDER, spaceAfter=GAP_MD))
 
-        story.append(Spacer(1, 8))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=10))
-
-    doc.build(story, canvasmaker=NumberedCanvas)
-    buffer.seek(0)
-    return buffer.getvalue()
+        doc.build(story, canvasmaker=NumberedCanvas)
+        buffer.seek(0)
+        return buffer.getvalue()
+    finally:
+        mr.cleanup()
