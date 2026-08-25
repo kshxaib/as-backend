@@ -206,6 +206,10 @@ class MathRenderer:
     # -- core raster -----------------------------------------------------------
     def _render_mathtext(self, latex: str, color_hex: str, fontsize: float) -> InlineMath:
         """Rasterize a single mathtext-parseable expression. Raises on parse error."""
+        # In (La)TeX/mathtext ``%`` starts a comment, which would silently drop
+        # the rest of the line. In academic formulas ``%`` almost always means
+        # "percent" (e.g. ``\times 100%``), so escape any unescaped ``%``.
+        latex = re.sub(r"(?<!\\)%", r"\\%", latex)
         key = ("mt", latex, color_hex, round(fontsize, 2))
         cached = self._cache.get(key)
         if cached is not None:
@@ -277,8 +281,20 @@ class MathRenderer:
                     return [self._build_matrix(body, env_match, env, color_hex, fontsize)]
                 if env in _MULTILINE_ENVS:
                     return self._build_multiline(env_match.group("body"), color_hex, fontsize)
-            # Plain display expression.
-            return [self._image_flowable(self._render_mathtext(body, color_hex, fontsize))]
+            # Plain display expression. It may have been soft-wrapped across
+            # lines by the model, or hold several formula lines separated by
+            # ``\\``; mathtext handles neither, so normalise here: split on
+            # explicit ``\\`` breaks and collapse stray whitespace/newlines
+            # within each line into single spaces.
+            flowables = []
+            for row in self._split_rows(body) or [body]:
+                line = " ".join(row.split())
+                if not line:
+                    continue
+                flowables.append(self._image_flowable(self._render_mathtext(line, color_hex, fontsize)))
+            if not flowables:
+                raise ValueError("empty display math")
+            return flowables
         except Exception:
             return [self._fallback_flowable(body)]
 
