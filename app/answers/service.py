@@ -99,7 +99,54 @@ def generate_answer_set(db: Session, question_bank_id: int, user_id: int | None 
     return answer_set
 
 
-def retry_single_answer(db: Session, answer_id: int) -> Answer:
+def _clone_answer_set_as_private(db: Session, source: AnswerSet) -> AnswerSet:
+    """Deep-copy an AnswerSet (and every Answer row under it) into a brand-new
+    PRIVATE AnswerSet.
+
+    Used to protect a publicly-shared ("community") set from in-place mutation
+    during regeneration. Because the Community Hub reads Answer rows live, editing
+    a shared set's answers would silently change the Hub. Instead we fork a private
+    working copy and regenerate there, leaving the shared entry frozen until the
+    user explicitly publishes an update via
+    POST /community/answer-sets/{id}/share-update.
+    """
+    clone = AnswerSet(
+        question_bank_id=source.question_bank_id,
+        user_id=source.user_id,
+        status=source.status,
+        total_questions=source.total_questions,
+        completed_questions=source.completed_questions,
+        visibility="private",
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+
+    source_answers = (
+        db.query(Answer)
+        .filter(Answer.answer_set_id == source.id)
+        .order_by(Answer.question_number)
+        .all()
+    )
+    for src in source_answers:
+        db.add(
+            Answer(
+                answer_set_id=clone.id,
+                question_id=src.question_id,
+                question_number=src.question_number,
+                question_text=src.question_text,
+                marks=src.marks,
+                content=src.content,
+                sources=src.sources,
+                status=src.status,
+                error_message=src.error_message,
+            )
+        )
+    db.commit()
+    return clone
+
+
+def retry_single_answer(db: Session, answer_id: int, user_instruction: str | None = None) -> Answer:
     ans = db.query(Answer).filter(Answer.id == answer_id).first()
     if not ans:
         raise HTTPException(status_code=404, detail=f"Answer with ID {answer_id} not found.")
@@ -107,6 +154,31 @@ def retry_single_answer(db: Session, answer_id: int) -> Answer:
     answer_set = db.query(AnswerSet).filter(AnswerSet.id == ans.answer_set_id).first()
     if not answer_set:
         raise HTTPException(status_code=404, detail=f"AnswerSet with ID {ans.answer_set_id} not found.")
+
+    # If this set is currently shared to The Commons, never regenerate in place:
+    # that would mutate the live Hub entry. Fork a private working copy and
+    # regenerate the matching answer there so the shared version stays frozen
+    # until the user explicitly clicks "Share Updated Answer Set".
+    if answer_set.visibility == "community":
+        target_question_id = ans.question_id
+        target_question_number = ans.question_number
+        working_set = _clone_answer_set_as_private(db, answer_set)
+        cloned = (
+            db.query(Answer)
+            .filter(
+                Answer.answer_set_id == working_set.id,
+                Answer.question_id == target_question_id,
+                Answer.question_number == target_question_number,
+            )
+            .first()
+        )
+        if not cloned:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to fork a private working copy for regeneration.",
+            )
+        ans = cloned
+        answer_set = working_set
 
     qb = db.query(QuestionBank).filter(QuestionBank.id == answer_set.question_bank_id).first()
     resource_ids = parse_resource_ids(qb.resource_ids) if qb else []
@@ -123,6 +195,7 @@ def retry_single_answer(db: Session, answer_id: int) -> Answer:
             marks=ans.marks,
             resource_ids=resource_ids,
             enable_review=True,
+            user_instruction=user_instruction,
         )
         ans.content = rag_output["content"]
         ans.sources = json.dumps(rag_output["sources"])

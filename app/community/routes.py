@@ -142,6 +142,44 @@ def toggle_share_answer_set(answer_set_id: int, db: Session = Depends(get_db)):
     }
 
 
+# Share an updated/regenerated answer set as the SINGLE community copy for its
+# question bank, retiring any previously-shared version so the Hub never shows
+# a duplicate of the same bank.
+@router.post("/answer-sets/{answer_set_id}/share-update")
+def share_updated_answer_set(answer_set_id: int, db: Session = Depends(get_db)):
+    ans_set = db.query(AnswerSet).filter(AnswerSet.id == answer_set_id).first()
+    if not ans_set:
+        raise HTTPException(status_code=404, detail="Answer Set not found.")
+
+    # Retire any other community-shared set for the same question bank + owner.
+    stale_sets = (
+        db.query(AnswerSet)
+        .filter(
+            AnswerSet.question_bank_id == ans_set.question_bank_id,
+            AnswerSet.user_id == ans_set.user_id,
+            AnswerSet.visibility == "community",
+            AnswerSet.id != ans_set.id,
+        )
+        .all()
+    )
+    retired_ids = []
+    for stale in stale_sets:
+        stale.visibility = "private"
+        retired_ids.append(stale.id)
+
+    # Point the community flag at this (updated) set.
+    ans_set.visibility = "community"
+    db.commit()
+    db.refresh(ans_set)
+
+    return {
+        "message": "Updated answer set shared to The Commons.",
+        "answer_set_id": ans_set.id,
+        "visibility": ans_set.visibility,
+        "retired_ids": retired_ids,
+    }
+
+
 # PUBLIC: Get all answers for a community-shared answer set (no login required)
 @router.get("/answer-sets/{answer_set_id}/answers")
 def get_community_answer_set_answers(answer_set_id: int, db: Session = Depends(get_db)):

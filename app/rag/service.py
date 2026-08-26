@@ -44,7 +44,7 @@ Guidelines:
 4. TYPOGRAPHY & STRUCTURE:
    - Use exactly one blank line between sections, definitions, and topics.
    - Use `### Heading` subheadings for clear visual hierarchy. Do NOT use bold-only headers.
-   - If an ASCII diagram or architecture flowchart is helpful, wrap it inside a fenced code block (``` ... ```) with clean monospace alignment.
+   - DIAGRAMS: If the question explicitly asks to draw/sketch/show a diagram, flowchart, architecture, or schematic, you MUST include a clear ASCII/text diagram inside a fenced code block (``` ... ```) with clean monospace alignment, alongside a brief explanation. If no diagram is requested, add one only when it genuinely aids understanding.
    - Do NOT use markdown dividers `---` or `--` anywhere in your answer.
    - Do NOT add trailing essay-style concluding filler paragraphs at the end of bulleted answers.
 
@@ -75,9 +75,9 @@ Guidelines:
    ### Step 2: [Description]
    Clear explanation.
 
-   For comparison questions, use:
+   For comparison questions (the question asks to "differentiate", "difference between", "distinguish", "compare", or "A vs B"):
    ### [Concept A] vs [Concept B]
-   A comparison table may be used ONLY when the question explicitly asks for comparison, differences, or tabular representation.
+   You MUST present the core of the answer as a Markdown comparison table with a header row (e.g. `| Aspect | Concept A | Concept B |`) covering several distinct aspects. Do NOT use a comparison table for non-comparison questions.
 
    NEVER add these sections unless explicitly requested by the question:
    - Summary / Summary Table
@@ -89,11 +89,12 @@ Guidelines:
 
 6. MARK-BASED ANSWER STRUCTURE:
 
-   2 MARKS:
+   2 MARKS (KEEP IT VERY SHORT — over-answering here is the most common mistake):
    - Direct, simple definition in 1–2 plain sentences.
-   - 2–3 concise bullet points with standard keywords in bold (e.g., "**Keyword** – Simple explanation").
-   - One key formula or fact if applicable.
-   - Keep it crisp and to the point. Stop when done.
+   - At most 2–3 concise bullet points with standard keywords in bold (e.g., "**Keyword** – Simple explanation").
+   - One key formula or fact ONLY if the question needs it.
+   - Do NOT add `###` headings, an Example section, or a Formula section unless the question explicitly asks for one.
+   - Keep it crisp; stop the moment the point is made. Never expand a 2-mark answer into an essay.
 
    5 MARKS:
    - Simple definition or introduction.
@@ -108,7 +109,7 @@ Guidelines:
    - Clear examples and practical applications.
    - Thorough coverage for full marks, keeping language readable and well-structured.
 
-   Never pad an answer with complex filler words. Prioritize standard syllabus terms, simple explanations, technical correctness, clarity, and mark-appropriate depth."""
+   Never pad an answer with complex filler words, and never write more than the marks justify. Answer length MUST be proportional to the marks. Prioritize standard syllabus terms, simple explanations, technical correctness, clarity, and mark-appropriate depth."""
 
 
 REVIEWER_SYSTEM_INSTRUCTION = """You are a Senior Academic Reviewer and Grading Professor for University Examination Boards.
@@ -139,10 +140,11 @@ Evaluation Checklist:
    - Use `### Heading` subheadings for structure. Do NOT use bold-only headers.
    - Omit any heading or section that is not directly relevant to the question.
 
-5. Mark-Appropriate Depth:
-   - 2 Marks: Short simple definition + 2–3 crisp bullet points with bold keywords. Stop when done.
+5. Mark-Appropriate Depth (enforce length proportional to marks):
+   - 2 Marks: Short simple definition + at most 2–3 crisp bullet points with bold keywords. No `###` headings / Example / Formula sections unless the question asked for them. If the draft is bloated, TRIM it down. Stop when done.
    - 5 Marks: Simple definition + 4–6 clear points with bold keywords and simple 1-line explanations + formula/example if relevant.
    - 10+ Marks: Detailed explanation in clean subsections, formulas, step-by-step points, examples/diagrams, keeping language simple and scannable.
+   - If the question asks to differentiate/compare, ensure the final answer KEEPS a Markdown comparison table. If the question asks for a diagram, ensure the final answer KEEPS the ASCII diagram (fenced code block). Never delete a required table or diagram.
 
 Output: Return ONLY the final, polished student answer in Markdown format. No preamble, no reviewer commentary, no meta-notes."""
 
@@ -166,7 +168,51 @@ def clean_answer_text(text: str) -> str:
     return cleaned.strip()
 
 
-def build_rag_prompt(question_text: str, marks: int, context_documents: list[Document]) -> tuple[str, list[dict]]:
+_COMPARE_RE = re.compile(r"\b(differentiate|difference|differences|distinguish|compare|comparison|versus|vs\.?)\b", re.IGNORECASE)
+_DIAGRAM_RE = re.compile(r"\b(diagram|flow\s*chart|architecture|schematic|draw|sketch)\b", re.IGNORECASE)
+
+
+def build_answer_directives(marks: int, question_text: str) -> str:
+    """Build explicit, per-question directives so the model reliably respects
+    marks-proportional length and produces a comparison table / ASCII diagram
+    when the question actually demands one (the system instruction alone is too
+    easy to ignore)."""
+    q = question_text or ""
+    lines: list[str] = []
+
+    if marks <= 2:
+        lines.append(
+            f"This is a {marks}-mark question — keep it VERY short: a 1–2 sentence definition plus at most "
+            "2–3 concise bullet points. Do NOT add ### headings, an Example section, or a Formula section "
+            "unless the question explicitly asks. Stop as soon as the point is made."
+        )
+    elif marks <= 6:
+        lines.append(
+            f"This is a {marks}-mark question — give moderate depth: a short definition plus 4–6 clear points "
+            "(or 2–4 small sub-sections). Do not pad with filler."
+        )
+    else:
+        lines.append(
+            f"This is a {marks}-mark question — give thorough, well-structured depth with clear subsections, "
+            "but keep language simple and never pad with filler."
+        )
+
+    if _COMPARE_RE.search(q):
+        lines.append(
+            "This question asks for a comparison/difference — you MUST present the core of the answer as a "
+            "Markdown comparison table with a header row (e.g. `| Aspect | A | B |`) covering several distinct aspects."
+        )
+
+    if _DIAGRAM_RE.search(q):
+        lines.append(
+            "This question asks for a diagram — you MUST include a clear ASCII/text diagram inside a fenced code "
+            "block (``` ... ```) with clean monospace alignment, alongside a brief explanation."
+        )
+
+    return "\n".join(f"- {ln}" for ln in lines)
+
+
+def build_rag_prompt(question_text: str, marks: int, context_documents: list[Document], user_instruction: str | None = None) -> tuple[str, list[dict]]:
     sources = []
     context_blocks = []
 
@@ -191,16 +237,27 @@ def build_rag_prompt(question_text: str, marks: int, context_documents: list[Doc
 
     context_str = "\n\n".join(context_blocks) if context_blocks else "No specific study material chunks retrieved."
 
+    directives = build_answer_directives(marks, question_text)
+
     prompt = f"""QUESTION ({marks} Marks):
 {question_text}
 
 STUDY MATERIAL CONTEXT:
 {context_str}
 
+ANSWER REQUIREMENTS FOR THIS QUESTION:
+{directives}
+
 Please generate the complete, mark-appropriate answer for this question using the context above.
 Write in simple, clear, easy-to-understand English with accurate technical facts (avoid overly difficult/dense words).
 Format all math formulas with $$ and $ delimiters cleanly without stray blank lines inside formulas.
 Do NOT include unnecessary summary tables or markdown dividers (---)."""
+
+    if user_instruction and user_instruction.strip():
+        prompt += f"""
+
+ADDITIONAL USER INSTRUCTION (high priority — follow this unless it conflicts with factual accuracy or the study material):
+{user_instruction.strip()}"""
 
     return prompt, sources
 
@@ -211,10 +268,13 @@ def review_rag_answer(
     draft_answer: str,
     context_documents: list[Document],
     user_keys: dict[str, str] | None = None,
+    user_instruction: str | None = None,
 ) -> str:
     context_str = "\n\n".join(
         [f"- [Page {doc.metadata.get('page', 'N/A')}]: {doc.page_content}" for doc in context_documents]
     )
+
+    directives = build_answer_directives(marks, question_text)
 
     review_prompt = f"""QUESTION ({marks} Marks):
 {question_text}
@@ -225,7 +285,16 @@ STUDY MATERIAL CONTEXT:
 DRAFT ANSWER:
 {draft_answer}
 
-Perform your Academic Review. Make sure the explanation is simple, direct, and easy to understand (replace any hard/dense words with clear, simple terms while preserving exact technical meaning). Ensure math formulas ($$ / $) are formatted cleanly, remove any unsolicited summary tables or markdown horizontal rules (---), and return ONLY the final answer."""
+ANSWER REQUIREMENTS FOR THIS QUESTION:
+{directives}
+
+Perform your Academic Review. Make sure the explanation is simple, direct, and easy to understand (replace any hard/dense words with clear, simple terms while preserving exact technical meaning). Ensure the final answer respects the ANSWER REQUIREMENTS above (keep the length proportional to the marks; keep any required comparison table or ASCII diagram intact). Ensure math formulas ($$ / $) are formatted cleanly, remove any unsolicited summary tables or markdown horizontal rules (---), and return ONLY the final answer."""
+
+    if user_instruction and user_instruction.strip():
+        review_prompt += f"""
+
+ADDITIONAL USER INSTRUCTION (high priority — honor it in the final answer unless it conflicts with factual accuracy):
+{user_instruction.strip()}"""
 
     try:
         short_q = question_text[:50] + "..." if len(question_text) > 50 else question_text
@@ -249,6 +318,7 @@ def generate_rag_answer(
     resource_ids: list[int],
     limit: int = 5,
     enable_review: bool = True,
+    user_instruction: str | None = None,
 ) -> dict:
     # 1. Verify user has configured all 4 required free keys
     check_user_has_all_required_keys(db=db, user_id=user_id)
@@ -267,6 +337,7 @@ def generate_rag_answer(
         question_text=question_text,
         marks=marks,
         context_documents=retrieved_docs,
+        user_instruction=user_instruction,
     )
 
     # 4. Draft Answer Generation using multi-provider router
@@ -287,6 +358,7 @@ def generate_rag_answer(
             draft_answer=final_content,
             context_documents=retrieved_docs,
             user_keys=user_keys,
+            user_instruction=user_instruction,
         )
 
     return {

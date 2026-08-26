@@ -63,3 +63,9 @@ class GenerateAnswerSetRequest(BaseModel):
 class SingleQuestionGenerateRequest(BaseModel):
     question_id: int
     user_id: Optional[int] = None
+
+
+class RetryAnswerRequest(BaseModel):
+    # Optional free-text guidance the user adds when regenerating a single
+    # answer. Merged on top of the existing RAG logic; never replaces it.
+    user_instruction: Optional[str] = None

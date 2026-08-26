@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app.answers.schemas import AnswerResponse, AnswerSetProgressResponse, AnswerSetResponse, GenerateAnswerSetRequest
+from app.answers.schemas import AnswerResponse, AnswerSetProgressResponse, AnswerSetResponse, GenerateAnswerSetRequest, RetryAnswerRequest
 from app.answers.service import format_answer_for_response, generate_answer_set, get_answer_set, get_answers_for_set, retry_single_answer
 from app.db.database import get_db
 from app.db.models import AnswerSet, QuestionBank
@@ -129,14 +129,19 @@ def get_answer_set_progress_endpoint(
     }
 
 
-# Retry a single failed answer
+# Retry a single failed answer (optionally with a user-supplied instruction)
 @router.post("/answers/{answer_id}/retry", response_model=AnswerResponse)
 def retry_answer_endpoint(
     answer_id: int,
+    payload: RetryAnswerRequest | None = Body(default=None),
     db: Session = Depends(get_db),
 ):
     try:
-        ans = retry_single_answer(db=db, answer_id=answer_id)
+        ans = retry_single_answer(
+            db=db,
+            answer_id=answer_id,
+            user_instruction=payload.user_instruction if payload else None,
+        )
         return format_answer_for_response(ans)
     except HTTPException:
         raise
