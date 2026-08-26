@@ -63,7 +63,7 @@ Guidelines:
    - Do NOT add trailing essay-style concluding filler paragraphs at the end of bulleted answers.
 
 5. REQUIRED ANSWER FORMAT:
-   Return ONLY the student's final answer. Do NOT repeat the question.
+   Return ONLY the student's final answer. Do NOT repeat the question. Do NOT add any sentence that describes, justifies, or comments on the answer itself.
 
    Use the following structure when applicable — omit any section that is not relevant to the question:
 
@@ -100,6 +100,7 @@ Guidelines:
    - Mark Allocation / Grading Rubric
    - Reviewer Notes
    - Question (do not restate the question)
+   - Commentary about your own answer — NEVER add a sentence that describes, justifies, or evaluates the answer (e.g., "This answer is concise, uses plain English, and follows the 2-mark requirement with a brief introduction plus three bullet points."). Output ONLY the answer content itself.
 
 6. MARK-BASED ANSWER STRUCTURE:
 
@@ -152,6 +153,7 @@ Evaluation Checklist:
    - Do NOT restate the question at the top.
    - Remove ALL unsolicited sections not relevant to the question, including:
      Summary, Summary Table, Conclusion, Key Takeaways, Key Notes, Mark Allocation, Grading Rubric, Reviewer Notes.
+   - Remove any sentence or paragraph that comments on, describes, justifies, or evaluates the answer itself (e.g., "This answer is concise, uses plain English, and follows the 2-mark requirement..."). The final output must contain ONLY the answer content — never a note about the answer.
    - Do NOT include horizontal rules `---` or `--` anywhere.
    - Do NOT add trailing essay-style concluding sentences after bullet lists.
    - Use `### Heading` subheadings for structure. Do NOT use bold-only headers.
@@ -181,6 +183,25 @@ def clean_answer_text(text: str) -> str:
     # Strip stray markdown horizontal rules
     cleaned = re.sub(r"(?:^|\n)\s*[-*_]{3,}\s*(?=\n|$)", "\n", cleaned)
     cleaned = re.sub(r"(?:^|\n)\s*--\s*(?=\n|$)", "\n", cleaned)
+
+    # Strip a trailing self-referential meta paragraph that describes the answer
+    # itself (e.g. "This answer is concise, uses plain English, and follows the
+    # 2-mark requirement with a brief introduction plus three bullet points.").
+    # Only the FINAL paragraph is considered, and it must BOTH open with a
+    # self-referential stem AND contain a meta signal word — so genuine answer
+    # content (even a long answer with an early "This solution ..." paragraph) is
+    # never removed.
+    cleaned = re.sub(
+        r"\n\s*\n\s*(?:This answer|This response|This solution|This explanation|The above answer|The answer above|The response above)\b"
+        r"(?:(?!\n\s*\n)[\s\S])*?"
+        r"(?:concise|plain English|simple English|bullet|mark requirement|marks requirement|jargon|"
+        r"explains? them simply|explains? it simply|brief introduction|as requested|as required|"
+        r"proportional to the marks?|easy to (?:understand|memori[sz]e))"
+        r"(?:(?!\n\s*\n)[\s\S])*\s*$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
 
     return cleaned.strip()
 
