@@ -69,3 +69,8 @@ class RetryAnswerRequest(BaseModel):
     # Optional free-text guidance the user adds when regenerating a single
     # answer. Merged on top of the existing RAG logic; never replaces it.
     user_instruction: Optional[str] = None
+    # Optional reference answer the user supplies to steer regeneration. When the
+    # user_instruction explicitly asks to use it exactly (verbatim), it is saved
+    # as-is without RAG/review; otherwise it is used as the primary basis and
+    # adapted by the AI while preserving its core content and structure.
+    reference_answer: Optional[str] = None

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
 from app.db.models import Answer, AnswerSet, Question, QuestionBank
-from app.rag.service import generate_rag_answer
+from app.rag.service import generate_rag_answer, is_verbatim_reference_instruction, normalize_reference_to_markdown
 
 
 def parse_resource_ids(resource_ids_str: str) -> list[int]:
@@ -146,7 +146,7 @@ def _clone_answer_set_as_private(db: Session, source: AnswerSet) -> AnswerSet:
     return clone
 
 
-def retry_single_answer(db: Session, answer_id: int, user_instruction: str | None = None) -> Answer:
+def retry_single_answer(db: Session, answer_id: int, user_instruction: str | None = None, reference_answer: str | None = None) -> Answer:
     ans = db.query(Answer).filter(Answer.id == answer_id).first()
     if not ans:
         raise HTTPException(status_code=404, detail=f"Answer with ID {answer_id} not found.")
@@ -187,6 +187,21 @@ def retry_single_answer(db: Session, answer_id: int, user_instruction: str | Non
     ans.status = "generating"
     db.commit()
 
+    # Priority 1 — explicit "use this answer exactly": preserve the supplied
+    # reference answer's wording/content, but normalize it into the app's standard
+    # Markdown (headings, bullets, bold, LaTeX, code fences) before saving — never
+    # store raw plain text. No RAG retrieval and no content review; existing
+    # sources are left untouched.
+    if reference_answer and reference_answer.strip() and is_verbatim_reference_instruction(user_instruction):
+        ans.content = normalize_reference_to_markdown(db, answer_set.user_id, reference_answer)
+        ans.status = "completed"
+        ans.error_message = None
+        if not was_previously_completed and answer_set.completed_questions < answer_set.total_questions:
+            answer_set.completed_questions += 1
+        db.commit()
+        db.refresh(ans)
+        return ans
+
     try:
         rag_output = generate_rag_answer(
             db=db,
@@ -196,6 +211,7 @@ def retry_single_answer(db: Session, answer_id: int, user_instruction: str | Non
             resource_ids=resource_ids,
             enable_review=True,
             user_instruction=user_instruction,
+            reference_answer=reference_answer,
         )
         ans.content = rag_output["content"]
         ans.sources = json.dumps(rag_output["sources"])

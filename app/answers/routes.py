@@ -141,6 +141,7 @@ def retry_answer_endpoint(
             db=db,
             answer_id=answer_id,
             user_instruction=payload.user_instruction if payload else None,
+            reference_answer=payload.reference_answer if payload else None,
         )
         return format_answer_for_response(ans)
     except HTTPException:
