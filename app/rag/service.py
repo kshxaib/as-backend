@@ -58,7 +58,17 @@ Guidelines:
 4. TYPOGRAPHY & STRUCTURE:
    - Use exactly one blank line between sections, definitions, and topics.
    - Use `### Heading` subheadings for clear visual hierarchy. Do NOT use bold-only headers.
-   - DIAGRAMS: If the question explicitly asks to draw/sketch/show a diagram, flowchart, architecture, or schematic, you MUST include a clear ASCII/text diagram inside a fenced code block (``` ... ```) with clean monospace alignment, alongside a brief explanation. If no diagram is requested, add one only when it genuinely aids understanding.
+   - DIAGRAMS: If the question explicitly asks to draw/sketch/show a diagram, flowchart, architecture, or schematic, you MUST include a clean Mermaid.js diagram inside a fenced code block with language `mermaid` (```mermaid ... ```), alongside a brief explanation of each block. Use the correct Mermaid diagram type:
+     - `graph TD` or `flowchart TD` for architectures, layer models (OSI/TCP), compiler phases, 3-tier models, and general block diagrams.
+     - `sequenceDiagram` for handshakes, client-server interactions, and protocol exchanges.
+     - `stateDiagram-v2` for process lifecycles (New → Ready → Running → Terminated), FSMs, and state transitions.
+     - `erDiagram` for database entity-relationship diagrams.
+   - Mermaid Syntax Rules (CRITICAL for rendering):
+     - Keep node IDs short alphanumeric strings (e.g., `A`, `B1`, `CPU`).
+     - Enclose labels in square brackets: `A[Application Layer]`.
+     - Do NOT use raw parentheses, quotes, or special characters inside node labels — they break rendering.
+     - Keep diagrams exam-friendly: 4–8 main blocks, clear directional flow, simple connector labels.
+   - If no diagram is explicitly requested, add one ONLY when it genuinely aids understanding (e.g., a 5+ mark architecture question).
    - Do NOT use markdown dividers `---` or `--` anywhere in your answer.
    - Do NOT add trailing essay-style concluding filler paragraphs at the end of bulleted answers.
 
@@ -172,31 +182,17 @@ Evaluation Checklist:
    - 2 Marks: A short plain-English explanation (1–2 simple sentences, not an over-compressed one-liner) + at most 2–3 short, clear points with bold keywords. No `###` headings / Example / Formula sections unless the question asked for them. If the draft is bloated or essay-like, TRIM it; if it is an over-compressed jargon one-liner, expand it slightly into a clear, simple explanation.
    - 5 Marks: Simple definition + 4–6 clear points with bold keywords and simple 1-line explanations + formula/example if relevant.
    - 10+ Marks: Detailed explanation in clean subsections, formulas, step-by-step points, examples/diagrams, keeping language simple and scannable.
-   - If the question asks to differentiate/compare, ensure the final answer KEEPS a Markdown comparison table. If the question asks for a diagram, ensure the final answer KEEPS the ASCII diagram (fenced code block). Never delete a required table or diagram.
+   - If the question asks to differentiate/compare, ensure the final answer KEEPS a Markdown comparison table. If the question asks for a diagram, ensure the final answer KEEPS the Mermaid diagram (fenced ```mermaid code block) intact, syntactically valid, and not truncated — never convert it to plain text or ASCII art, and never delete a required diagram.
+
+5b. Mermaid Diagram Validation:
+   - If the draft contains a ```mermaid fenced code block, verify it uses valid Mermaid syntax (correct `graph TD`, `sequenceDiagram`, `stateDiagram-v2`, or `erDiagram` header, proper arrow notation `-->`, `==>`, `->>`, and node labels in square brackets `[Label]`).
+   - If the Mermaid block is truncated or malformed, FIX it — never delete it. Ensure the diagram has a clear directional flow and exam-appropriate content.
 
 6. Numerical / Calculation Questions: If the question asks to calculate, compute, solve, evaluate, find, determine, or work out a numerical problem, ensure the FINAL answer contains a complete worked solution — the formula / method, the step-by-step calculation with intermediate results, and a clearly stated final answer. If the draft gave only theory or key points, ADD the full worked solution (use the exact values given in the question, or a small clearly-labeled assumed example if none were given). Never reduce a numerical answer to theory only, and never delete a correct worked calculation.
 
 Output: Return ONLY the final, polished student answer in Markdown format. No preamble, no reviewer commentary, no meta-notes."""
 
 
-FORMAT_SYSTEM_INSTRUCTION = """You are a formatting assistant. You convert a student's existing answer into the application's standard clean Markdown format. This is a FORMATTING task ONLY — never a rewriting task.
-
-PRESERVE CONTENT EXACTLY (CRITICAL):
-- Keep the answer's actual wording, meaning, facts, numbers, and examples exactly as written.
-- Do NOT invent, add, or remove information. Do NOT paraphrase, expand, shorten, summarize, or "improve" the wording.
-- You may only make the minimal edits needed to express the answer's existing structure in Markdown.
-
-FORMATTING RULES (apply only what the content already implies):
-- Convert heading-like lines into `### Heading` Markdown headings. If a clear list of points/components has no heading and needs one for structure, you may add a short, neutral heading (e.g. "### Main Components", "### Key Points") — never one that introduces new facts.
-- Convert list-like lines into proper Markdown bullets (`- `) or numbered lists (`1.`).
-- When a point leads with a term followed by a dash or colon (e.g. "Hardware Architecture – ..."), make that leading term bold: `**Hardware Architecture** – ...`.
-- Preserve any existing bold/italic emphasis.
-- Format math with LaTeX: inline `$ ... $`, display `$$ ... $$` (no blank lines inside the delimiters). Never use bare `[ ... ]` or `( ... )` for math.
-- Put diagrams / ASCII art / code inside fenced code blocks (``` ... ```), left exactly as written.
-- Use exactly one blank line between sections. Do NOT add markdown horizontal rules (`---`).
-- Do NOT add a Summary, Conclusion, Key Takeaways, or any commentary about the answer.
-
-Output: Return ONLY the normalized Markdown answer — no preamble and no explanation of what you changed."""
 
 
 def clean_answer_text(text: str) -> str:
@@ -246,25 +242,6 @@ _NUMERIC_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Phrases meaning "use the supplied reference answer EXACTLY" (verbatim), as
-# opposed to the softer "use this as reference" (adapt). Verbatim wins only when
-# the user explicitly asks for it, so "use this as reference" must NOT match here.
-_VERBATIM_RE = re.compile(
-    r"(use\s+(this\s+)?(exact|exactly)|exactly\s+this|use\s+this\s+answer|"
-    r"generate\s+this\s+(same|exact)|(same|exact)\s+answer|follow\s+this\s+answer\s+exactly|"
-    r"verbatim|word[\s-]for[\s-]word|as[\s-]is|as\s+it\s+is|do\s*n'?t\s+change|do\s+not\s+change)",
-    re.IGNORECASE,
-)
-
-
-def is_verbatim_reference_instruction(text: str | None) -> bool:
-    """True when the user's instruction explicitly asks to use a supplied
-    reference answer exactly / verbatim. The softer "use this as reference"
-    (adapt while preserving core content) is intentionally excluded."""
-    if not text or not text.strip():
-        return False
-    return bool(_VERBATIM_RE.search(text))
-
 
 def build_answer_directives(marks: int, question_text: str) -> str:
     """Build explicit, per-question directives so the model reliably respects
@@ -306,8 +283,11 @@ def build_answer_directives(marks: int, question_text: str) -> str:
 
     if _DIAGRAM_RE.search(q):
         lines.append(
-            "This question asks for a diagram — you MUST include a clear ASCII/text diagram inside a fenced code "
-            "block (``` ... ```) with clean monospace alignment, alongside a brief explanation."
+            "This question asks for a diagram — you MUST include a clean Mermaid.js diagram inside a fenced code "
+            "block with language `mermaid` (```mermaid ... ```). Use `graph TD` or `flowchart TD` for architectures "
+            "and block diagrams, `sequenceDiagram` for interactions, `stateDiagram-v2` for state/lifecycle transitions, "
+            "or `erDiagram` for ER diagrams. Keep node IDs short (A, B1), use square-bracket labels `[Label]`, "
+            "avoid special chars in labels. Add a brief text explanation of each block alongside the diagram."
         )
 
     if _NUMERIC_RE.search(q):
@@ -323,7 +303,7 @@ def build_answer_directives(marks: int, question_text: str) -> str:
     return "\n".join(f"- {ln}" for ln in lines)
 
 
-def build_rag_prompt(question_text: str, marks: int, context_documents: list[Document], user_instruction: str | None = None, reference_answer: str | None = None) -> tuple[str, list[dict]]:
+def build_rag_prompt(question_text: str, marks: int, context_documents: list[Document], user_instruction: str | None = None) -> tuple[str, list[dict]]:
     sources = []
     context_blocks = []
 
@@ -370,17 +350,6 @@ Do NOT include unnecessary summary tables or markdown dividers (---)."""
 ADDITIONAL USER INSTRUCTION (high priority — follow this unless it conflicts with factual accuracy or the study material):
 {user_instruction.strip()}"""
 
-    if reference_answer and reference_answer.strip():
-        prompt += (
-            "\n\nREFERENCE ANSWER (HIGH PRIORITY — use this as the PRIMARY BASIS for your answer):\n"
-            "Base your answer on the reference answer below. Preserve its core content, its points, its overall "
-            "structure, and its example. Adapt only the wording/formatting where needed for clarity and correct "
-            "math formatting, and keep everything factually accurate. Do not drop its key points or replace its example.\n"
-            "[BEGIN REFERENCE ANSWER]\n"
-            f"{reference_answer.strip()}\n"
-            "[END REFERENCE ANSWER]"
-        )
-
     return prompt, sources
 
 
@@ -391,7 +360,6 @@ def review_rag_answer(
     context_documents: list[Document],
     user_keys: dict[str, str] | None = None,
     user_instruction: str | None = None,
-    reference_answer: str | None = None,
 ) -> str:
     context_str = "\n\n".join(
         [f"- [Page {doc.metadata.get('page', 'N/A')}]: {doc.page_content}" for doc in context_documents]
@@ -419,17 +387,6 @@ Perform your Academic Review. Make sure the explanation is simple, direct, and e
 ADDITIONAL USER INSTRUCTION (high priority — honor it in the final answer unless it conflicts with factual accuracy):
 {user_instruction.strip()}"""
 
-    if reference_answer and reference_answer.strip():
-        review_prompt += (
-            "\n\nREFERENCE ANSWER (HIGH PRIORITY — the draft was based on this):\n"
-            "Keep the final answer faithful to the reference answer below — preserve its core content, points, "
-            "structure, and example. Do not summarize it away, drop its points, or replace its example; only refine "
-            "wording, clarity, and math formatting.\n"
-            "[BEGIN REFERENCE ANSWER]\n"
-            f"{reference_answer.strip()}\n"
-            "[END REFERENCE ANSWER]"
-        )
-
     try:
         short_q = question_text[:50] + "..." if len(question_text) > 50 else question_text
         reviewed_answer = call_review(
@@ -453,7 +410,6 @@ def generate_rag_answer(
     limit: int = 5,
     enable_review: bool = True,
     user_instruction: str | None = None,
-    reference_answer: str | None = None,
 ) -> dict:
     # 1. Verify user has configured all 4 required free keys
     check_user_has_all_required_keys(db=db, user_id=user_id)
@@ -473,7 +429,6 @@ def generate_rag_answer(
         marks=marks,
         context_documents=retrieved_docs,
         user_instruction=user_instruction,
-        reference_answer=reference_answer,
     )
 
     # 4. Draft Answer Generation using multi-provider router
@@ -495,51 +450,9 @@ def generate_rag_answer(
             context_documents=retrieved_docs,
             user_keys=user_keys,
             user_instruction=user_instruction,
-            reference_answer=reference_answer,
         )
 
     return {
         "content": final_content,
         "sources": sources,
     }
-
-
-def normalize_reference_to_markdown(db, user_id: int, raw_text: str) -> str:
-    """Convert a user-supplied reference answer into the app's standard clean
-    Markdown WITHOUT changing its wording, meaning, facts, or examples.
-
-    Used by the "use this answer exactly" path so raw plain text is never stored
-    directly in the database — the content/meaning is preserved but the standard
-    Markdown structure (headings, bullets, bold, LaTeX, code fences) is applied.
-    If the formatting model call is unavailable or fails, falls back to the
-    cleaned raw text so the save never fails.
-    """
-    if not raw_text or not raw_text.strip():
-        return ""
-
-    raw_clean = clean_answer_text(raw_text)
-    try:
-        check_user_has_all_required_keys(db=db, user_id=user_id)
-        user_keys = get_user_all_keys(db=db, user_id=user_id)
-        formatted = call_generation(
-            prompt=(
-                "Convert the following answer into the application's standard clean Markdown format. "
-                "Preserve its wording, meaning, facts, and examples EXACTLY — only add Markdown structure "
-                "(headings, bullets, bold lead-in terms, LaTeX for formulas, fenced code blocks for diagrams).\n\n"
-                "[BEGIN ANSWER]\n"
-                f"{raw_text.strip()}\n"
-                "[END ANSWER]"
-            ),
-            system_instruction=FORMAT_SYSTEM_INSTRUCTION,
-            user_keys=user_keys,
-            task_name="Reference Answer Markdown Normalization",
-        )
-        cleaned = clean_answer_text(formatted)
-        # Guard against a refusal / truncated response silently discarding the
-        # user's answer: only accept the formatted version if it retained a
-        # reasonable amount of the original content (formatting only adds markup).
-        if cleaned and len(cleaned) >= max(20, int(len(raw_clean) * 0.6)):
-            return cleaned
-        return raw_clean
-    except Exception:
-        return raw_clean

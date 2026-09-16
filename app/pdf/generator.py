@@ -23,9 +23,12 @@ Design goals (see also :mod:`app.pdf.fonts` and :mod:`app.pdf.mathrender`):
 Public API (unchanged): :func:`generate_solved_question_bank_pdf`.
 """
 
+import base64
 import io
 import json
+import logging
 import re
+import urllib.request
 from datetime import datetime
 
 from reportlab.lib.pagesizes import letter
@@ -40,6 +43,7 @@ from reportlab.platypus import (
     HRFlowable,
     Preformatted,
     KeepTogether,
+    Image as RLImage,
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -48,6 +52,7 @@ from app.pdf import fonts
 from app.pdf.mathrender import MathRenderer
 
 fonts.register_pdf_fonts()
+logger = logging.getLogger(__name__)
 
 
 # ─── Palette ──────────────────────────────────────────────────────────────────
@@ -327,6 +332,45 @@ def tokenize_blocks(text: str) -> list[tuple]:
 
 
 # ─── Block renderers ──────────────────────────────────────────────────────────
+
+def _render_mermaid_image(code: str, st) -> list:
+    """Render a Mermaid diagram as a high-resolution PNG via mermaid.ink.
+
+    Falls back to the standard code-block renderer if the API is unreachable
+    so that PDF generation NEVER fails because of a diagram.
+    """
+    code = code.rstrip("\n")
+    if not code.strip():
+        return []
+
+    try:
+        b64 = base64.urlsafe_b64encode(code.encode("utf-8")).decode("ascii")
+        url = f"https://mermaid.ink/img/{b64}?type=png"
+        req = urllib.request.Request(url, headers={"User-Agent": "AcademicStack-PDF/1.0"})
+        resp = urllib.request.urlopen(req, timeout=6)
+        png_bytes = resp.read()
+
+        if len(png_bytes) < 200:  # Suspiciously small — probably an error page
+            raise ValueError("Image too small, likely an error response")
+
+        img_buf = io.BytesIO(png_bytes)
+        img = RLImage(img_buf)
+
+        # Scale to fit within CONTENT_WIDTH while preserving aspect ratio
+        iw, ih = img.drawWidth, img.drawHeight
+        max_w, max_h = CONTENT_WIDTH, 260.0
+        scale = min(max_w / iw, max_h / ih, 1.0)
+        img.drawWidth = iw * scale
+        img.drawHeight = ih * scale
+        img.hAlign = "CENTER"
+
+        caption = Paragraph("Figure: Academic Diagram (Mermaid)", st.caption)
+        return [Spacer(1, GAP_SM), KeepTogether([img, Spacer(1, 3), caption]), Spacer(1, GAP_MD)]
+
+    except Exception as exc:
+        logger.warning("Mermaid diagram image fetch failed (%s), falling back to code block.", exc)
+        return _render_code("mermaid", code, st)
+
 def _render_code(lang: str, code: str, st) -> list:
     code = code.rstrip("\n")
     if not code.strip():
@@ -459,7 +503,11 @@ def render_blocks(blocks: list[tuple], mr: MathRenderer, st) -> list:
         elif kind == "table":
             out.extend(_render_table(block[1], mr, st))
         elif kind == "code":
-            out.extend(_render_code(block[1], block[2], st))
+            lang, code_text = block[1], block[2]
+            if lang == "mermaid":
+                out.extend(_render_mermaid_image(code_text, st))
+            else:
+                out.extend(_render_code(lang, code_text, st))
         elif kind == "mathblock":
             out.extend(_render_mathblock(block[1], mr, st))
         elif kind == "quote":
