@@ -139,7 +139,7 @@ def _add_documents_with_retry(
 
 
 def index_resource(db: Session, resource: Resource) -> int:
-    # 1. Verify user has configured all 4 required free keys
+    # 1. Verify user has configured OpenAI API key
     check_user_has_all_required_keys(db=db, user_id=resource.user_id)
     user_keys = get_user_all_keys(db=db, user_id=resource.user_id)
 
@@ -171,7 +171,7 @@ def index_resource(db: Session, resource: Resource) -> int:
         # 7. Add AcademicStack metadata
         chunks = enrich_documents(documents=chunks, resource=resource)
 
-        # 8. Create LangChain Qdrant store with dynamic embeddings (Gemini/OpenAI)
+        # 8. Create LangChain Qdrant store with OpenAI embeddings
         vector_store = create_vector_store(user_keys=user_keys)
 
         # 9. Check if any chunks were already indexed (e.g. from previous partial run)

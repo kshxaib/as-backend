@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 
 from app.core.security import hash_password, verify_password, create_access_token
 from app.db.models import User
-from app.users.schemas import UserRegister, UserLogin, UserProfileResponse, UserCreate
+from app.users.schemas import UserProfileResponse, UserRegister, UserLogin, UserCreate
 from app.utils.encryption import encrypt_api_key, decrypt_api_key
 
 
@@ -13,47 +13,7 @@ def user_has_openai_key(user: User | None) -> bool:
         return False
     try:
         decrypted = decrypt_api_key(user.openai_api_key_encrypted)
-        return bool(decrypted and len(decrypted.strip()) > 5)
-    except Exception:
-        return False
-
-
-def user_has_gemini_key(user: User | None) -> bool:
-    if not user or not user.gemini_api_key_encrypted:
-        return False
-    try:
-        decrypted = decrypt_api_key(user.gemini_api_key_encrypted)
-        return bool(decrypted and len(decrypted.strip()) > 5)
-    except Exception:
-        return False
-
-
-def user_has_groq_key(user: User | None) -> bool:
-    if not user or not user.groq_api_key_encrypted:
-        return False
-    try:
-        decrypted = decrypt_api_key(user.groq_api_key_encrypted)
-        return bool(decrypted and len(decrypted.strip()) > 5)
-    except Exception:
-        return False
-
-
-def user_has_openrouter_key(user: User | None) -> bool:
-    if not user or not user.openrouter_api_key_encrypted:
-        return False
-    try:
-        decrypted = decrypt_api_key(user.openrouter_api_key_encrypted)
-        return bool(decrypted and len(decrypted.strip()) > 5)
-    except Exception:
-        return False
-
-
-def user_has_nvidia_key(user: User | None) -> bool:
-    if not user or not user.nvidia_api_key_encrypted:
-        return False
-    try:
-        decrypted = decrypt_api_key(user.nvidia_api_key_encrypted)
-        return bool(decrypted and len(decrypted.strip()) > 5)
+        return bool(decrypted and len(decrypted.strip()) > 10)
     except Exception:
         return False
 
@@ -64,10 +24,6 @@ def to_profile_response(user: User) -> UserProfileResponse:
         username=user.username or f"user_{user.id}",
         name=user.name,
         has_openai_key=user_has_openai_key(user),
-        has_gemini_key=user_has_gemini_key(user),
-        has_groq_key=user_has_groq_key(user),
-        has_openrouter_key=user_has_openrouter_key(user),
-        has_nvidia_key=user_has_nvidia_key(user),
         created_at=user.created_at,
     )
 
@@ -85,10 +41,6 @@ def register_user(db: Session, user_data: UserRegister) -> tuple[User, str]:
         password_hash=hash_password(user_data.password),
         name=user_data.name.strip(),
         openai_api_key_encrypted=None,
-        gemini_api_key_encrypted=None,
-        groq_api_key_encrypted=None,
-        openrouter_api_key_encrypted=None,
-        nvidia_api_key_encrypted=None,
     )
 
     db.add(user)
@@ -113,10 +65,10 @@ def authenticate_user(db: Session, login_data: UserLogin) -> tuple[User, str]:
 
 def update_user_openai_key(db: Session, user: User, openai_key: str) -> User:
     clean_key = openai_key.strip()
-    if not clean_key.startswith("sk-") or len(clean_key) < 20:
+    if len(clean_key) < 20 or not clean_key.startswith("sk-"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OpenAI API key format. OpenAI keys must start with 'sk-' and be at least 20 characters long.",
+            detail="Invalid OpenAI API key format. Keys must start with 'sk-' and be at least 20 characters.",
         )
 
     user.openai_api_key_encrypted = encrypt_api_key(clean_key)
@@ -125,92 +77,8 @@ def update_user_openai_key(db: Session, user: User, openai_key: str) -> User:
     return user
 
 
-def update_user_gemini_key(db: Session, user: User, gemini_key: str) -> User:
-    clean_key = gemini_key.strip()
-    if clean_key.startswith(("gsk_", "nvapi-", "sk-or-")) or len(clean_key) < 25:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Google Gemini API key. Gemini keys usually start with 'AIzaSy' or 'AQ.' and must be at least 25 characters long.",
-        )
-
-    user.gemini_api_key_encrypted = encrypt_api_key(clean_key)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def update_user_groq_key(db: Session, user: User, groq_key: str) -> User:
-    clean_key = groq_key.strip()
-    if not clean_key.startswith("gsk_") or len(clean_key) < 25:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Groq API key format. Groq keys must start with 'gsk_' and be at least 25 characters long.",
-        )
-
-    user.groq_api_key_encrypted = encrypt_api_key(clean_key)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def update_user_openrouter_key(db: Session, user: User, openrouter_key: str) -> User:
-    clean_key = openrouter_key.strip()
-    if not clean_key.startswith("sk-or-") or len(clean_key) < 25:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OpenRouter API key format. OpenRouter keys must start with 'sk-or-' and be at least 25 characters long.",
-        )
-
-    user.openrouter_api_key_encrypted = encrypt_api_key(clean_key)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def update_user_nvidia_key(db: Session, user: User, nvidia_key: str) -> User:
-    clean_key = nvidia_key.strip()
-    if not clean_key.startswith("nvapi-") or len(clean_key) < 25:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid NVIDIA NIM API key format. NVIDIA keys must start with 'nvapi-' and be at least 25 characters long.",
-        )
-
-    user.nvidia_api_key_encrypted = encrypt_api_key(clean_key)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
 def delete_user_openai_key(db: Session, user: User) -> User:
     user.openai_api_key_encrypted = None
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def delete_user_gemini_key(db: Session, user: User) -> User:
-    user.gemini_api_key_encrypted = None
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def delete_user_groq_key(db: Session, user: User) -> User:
-    user.groq_api_key_encrypted = None
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def delete_user_openrouter_key(db: Session, user: User) -> User:
-    user.openrouter_api_key_encrypted = None
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def delete_user_nvidia_key(db: Session, user: User) -> User:
-    user.nvidia_api_key_encrypted = None
     db.commit()
     db.refresh(user)
     return user
@@ -227,7 +95,7 @@ def get_user_openai_key(db: Session, user_id: int) -> str:
     if not user.openai_api_key_encrypted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI API key is missing. Please add your OpenAI API key in your Profile settings to enable this AI feature.",
+            detail="OpenAI API key is missing. Please add your OpenAI API key in Profile settings.",
         )
 
     try:
@@ -238,111 +106,7 @@ def get_user_openai_key(db: Session, user_id: int) -> str:
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt OpenAI API key. Please re-enter your key in your Profile settings.",
-        )
-
-
-def get_user_gemini_key(db: Session, user_id: int) -> str:
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found.",
-        )
-
-    if not user.gemini_api_key_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Gemini API key is missing. Please add your Gemini API key in your Profile settings.",
-        )
-
-    try:
-        decrypted = decrypt_api_key(user.gemini_api_key_encrypted)
-        if not decrypted:
-            raise ValueError()
-        return decrypted
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt Gemini API key. Please re-enter your key in your Profile settings.",
-        )
-
-
-def get_user_groq_key(db: Session, user_id: int) -> str:
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found.",
-        )
-
-    if not user.groq_api_key_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Groq API key is missing. Please add your Groq API key in your Profile settings.",
-        )
-
-    try:
-        decrypted = decrypt_api_key(user.groq_api_key_encrypted)
-        if not decrypted:
-            raise ValueError()
-        return decrypted
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt Groq API key. Please re-enter your key in your Profile settings.",
-        )
-
-
-def get_user_openrouter_key(db: Session, user_id: int) -> str:
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found.",
-        )
-
-    if not user.openrouter_api_key_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenRouter API key is missing. Please add your OpenRouter API key in your Profile settings.",
-        )
-
-    try:
-        decrypted = decrypt_api_key(user.openrouter_api_key_encrypted)
-        if not decrypted:
-            raise ValueError()
-        return decrypted
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt OpenRouter API key. Please re-enter your key in your Profile settings.",
-        )
-
-
-def get_user_nvidia_key(db: Session, user_id: int) -> str:
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found.",
-        )
-
-    if not user.nvidia_api_key_encrypted:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="NVIDIA API key is missing. Please add your NVIDIA API key in your Profile settings.",
-        )
-
-    try:
-        decrypted = decrypt_api_key(user.nvidia_api_key_encrypted)
-        if not decrypted:
-            raise ValueError()
-        return decrypted
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to decrypt NVIDIA API key. Please re-enter your key in your Profile settings.",
+            detail="Failed to decrypt OpenAI API key. Please re-enter your key in Profile settings.",
         )
 
 
@@ -351,93 +115,42 @@ def get_user(db: Session, user_id: int) -> User | None:
 
 
 def get_user_all_keys(db: Session, user_id: int) -> dict[str, str]:
-    """
-    Retrieve all decrypted API keys for a user.
-    Only user-stored keys are used (no env fallback), EXCEPT OpenAI which falls back to env
-    so paid users don't need to re-enter it if it's already set in .env.
-    """
+    """Retrieve decrypted OpenAI API key strictly from user database record."""
     user = db.query(User).filter(User.id == user_id).first()
     keys = {
-        "gemini": None,
-        "groq": None,
-        "openrouter": None,
-        "nvidia": None,
         "openai": None,
     }
     if not user:
         return keys
 
-    if user.gemini_api_key_encrypted:
-        try:
-            keys["gemini"] = decrypt_api_key(user.gemini_api_key_encrypted)
-        except Exception:
-            pass
-
-    if user.groq_api_key_encrypted:
-        try:
-            keys["groq"] = decrypt_api_key(user.groq_api_key_encrypted)
-        except Exception:
-            pass
-
-    if user.openrouter_api_key_encrypted:
-        try:
-            keys["openrouter"] = decrypt_api_key(user.openrouter_api_key_encrypted)
-        except Exception:
-            pass
-
-    if user.nvidia_api_key_encrypted:
-        try:
-            keys["nvidia"] = decrypt_api_key(user.nvidia_api_key_encrypted)
-        except Exception:
-            pass
-
-    # OpenAI: user key first, then env fallback (optional provider)
     if user.openai_api_key_encrypted:
         try:
             keys["openai"] = decrypt_api_key(user.openai_api_key_encrypted)
         except Exception:
             pass
-    if not keys["openai"]:
-        keys["openai"] = os.getenv("OPENAI_API_KEY")
 
     return keys
 
 
 def check_user_has_all_required_keys(db: Session, user_id: int) -> None:
-    """Ensure user has entered all 4 required free API keys (Gemini, Groq, OpenRouter, NVIDIA NIM)."""
+    """Ensure user has configured their OpenAI API key."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
 
-    missing = []
-    if not user.gemini_api_key_encrypted:
-        missing.append("Google Gemini")
-    if not user.groq_api_key_encrypted:
-        missing.append("Groq Cloud")
-    if not user.openrouter_api_key_encrypted:
-        missing.append("OpenRouter")
-    if not user.nvidia_api_key_encrypted:
-        missing.append("NVIDIA NIM")
-
-    if missing:
+    if not user.openai_api_key_encrypted:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required free API keys: {', '.join(missing)}. Please configure all 4 free keys in Profile settings to enable AI features.",
+            detail="OpenAI API Key is missing. Please add your OpenAI API key in Profile settings to enable AI features.",
         )
 
 
-# Legacy support
 def create_user(db: Session, user_data: UserCreate) -> User:
-    encrypted_key = encrypt_api_key(user_data.openai_api_key) if user_data.openai_api_key else None
     user = User(
         username=f"user_{user_data.name.lower().replace(' ', '_')}",
         password_hash=hash_password("default123"),
         name=user_data.name,
-        openai_api_key_encrypted=encrypted_key,
-        gemini_api_key_encrypted=None,
-        groq_api_key_encrypted=None,
-        openrouter_api_key_encrypted=None,
-        nvidia_api_key_encrypted=None,
+        openai_api_key_encrypted=None,
     )
     db.add(user)
     db.commit()

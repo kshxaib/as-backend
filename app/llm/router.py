@@ -1,7 +1,6 @@
 import logging
-import os
+import re
 import time
-from typing import Any
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -9,68 +8,34 @@ load_dotenv()
 
 logger = logging.getLogger("academicstack.router")
 
-# Base URLs and default model candidates per provider
-PROVIDER_CONFIGS: dict[str, dict[str, Any]] = {
-    "openrouter": {
-        "base_url": "https://openrouter.ai/api/v1",
-        "default_models": [
-            "liquid/lfm-2.5-2.6b:free",
-        ],
-    },
-    "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "default_models": [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.6-27b",
-        ],
-    },
-    "gemini": {
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "default_models": ["gemini-3.6-flash", "gemini-3.1-pro-preview"],
-    },
-    "nvidia": {
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "default_models": [
-            "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-8b-instruct",
-            "nvidia/nemotron-4-340b-instruct",
-        ],
-    },
-    "openai": {
-        "base_url": "https://api.openai.com/v1",
-        "default_models": ["gpt-4o-mini", "gpt-4o"],
-    },
-}
+# Fast, high-capability OpenAI candidate models with automatic failover
+OPENAI_EXTRACTION_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+]
 
-# Only OpenAI falls back to env. All other providers MUST be user-supplied keys.
-OPENAI_ENV_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_GENERATION_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+]
+
+OPENAI_REVIEW_MODELS = [
+    "gpt-4o-mini",
+    "gpt-4o",
+]
 
 
-def _call_provider_openai_compatible(
-    provider_name: str,
+def _call_openai(
     api_key: str,
     model: str,
     prompt: str,
     system_instruction: str = "",
     temperature: float = 0.2,
 ) -> str:
-    config = PROVIDER_CONFIGS.get(provider_name)
-    if not config:
-        raise ValueError(f"Unknown provider '{provider_name}'")
-
-    extra_headers = {}
-    if provider_name == "openrouter":
-        extra_headers = {
-            "HTTP-Referer": "https://academicstack.app",
-            "X-Title": "AcademicStack",
-        }
-
+    """Executes an LLM call directly against OpenAI API using user's key."""
     client = OpenAI(
         api_key=api_key,
-        base_url=config["base_url"],
         timeout=60.0,
-        default_headers=extra_headers if extra_headers else None,
     )
 
     messages = []
@@ -88,54 +53,48 @@ def _call_provider_openai_compatible(
     return content.strip() if content else ""
 
 
-def call_llm_with_fallback(
+def call_openai_with_fallback(
     prompt: str,
     system_instruction: str = "",
     user_keys: dict[str, str] | None = None,
-    provider_priority: list[str] | None = None,
+    candidate_models: list[str] | None = None,
     temperature: float = 0.2,
     task_name: str = "AI Processing",
+    max_retries_per_model: int = 2,
 ) -> str:
     """
-    Executes an LLM call through an ordered list of providers with real-time console tracing.
-    All providers use user-supplied API keys only. OpenAI falls back to env if user key is absent.
+    Executes an LLM call strictly using OpenAI API with model failover
+    (e.g., gpt-4o-mini -> gpt-4o).
+    Key must strictly come from user database record (0 .env fallback).
     """
-    if not provider_priority:
-        provider_priority = ["openrouter", "groq", "gemini", "nvidia", "openai"]
-
     user_keys = user_keys or {}
+    openai_key = user_keys.get("openai")
+
+    if not openai_key:
+        raise RuntimeError(
+            "OpenAI API Key is missing. "
+            "Please add your OpenAI API Key in your Profile settings."
+        )
+
+    models = candidate_models or OPENAI_GENERATION_MODELS
     last_error = None
 
     print("\n" + "=" * 65)
-    print(f"[AI ROUTER] Task: {task_name.upper()}")
-    print(f"[AI ROUTER] Priority Chain: {' -> '.join([p.upper() for p in provider_priority])}")
+    print(f"[OPENAI ROUTER] Task: {task_name.upper()}")
+    print(f"[OPENAI ROUTER] Models Chain: {' -> '.join(models)}")
     print("=" * 65)
 
-    for provider in provider_priority:
-        # User key has full priority. For OpenAI only, fall back to env key.
-        api_key = user_keys.get(provider)
-        if not api_key and provider == "openai":
-            api_key = OPENAI_ENV_KEY
+    for idx, model in enumerate(models):
+        has_fallback_available = idx < len(models) - 1
 
-        if not api_key:
-            logger.debug(f"Skipping provider {provider}: No user API key configured.")
-            continue
-
-        config = PROVIDER_CONFIGS.get(provider)
-        if not config:
-            continue
-
-        models = config["default_models"]
-
-        for model in models:
+        for attempt in range(max_retries_per_model):
             try:
-                print(f"-> [AI ROUTER] Trying Provider: '{provider.upper()}' | Model: '{model}'...")
-                logger.info(f"Attempting LLM call with provider='{provider}', model='{model}' for task='{task_name}'")
+                print(f"-> [OPENAI ROUTER] Trying Model: '{model}' (Attempt {attempt + 1})...")
+                logger.info(f"Attempting OpenAI call with model='{model}' for task='{task_name}'")
 
                 start_time = time.time()
-                result = _call_provider_openai_compatible(
-                    provider_name=provider,
-                    api_key=api_key,
+                result = _call_openai(
+                    api_key=openai_key,
                     model=model,
                     prompt=prompt,
                     system_instruction=system_instruction,
@@ -144,27 +103,41 @@ def call_llm_with_fallback(
                 elapsed = round(time.time() - start_time, 2)
 
                 if result:
-                    print(f"[SUCCESS] Provider: '{provider.upper()}' | Model: '{model}' | Time: {elapsed}s | Task: '{task_name}'\n")
-                    logger.info(f"LLM call succeeded with provider='{provider}', model='{model}' in {elapsed}s")
+                    print(f"[SUCCESS] OpenAI Model: '{model}' | Time: {elapsed}s | Task: '{task_name}'\n")
+                    logger.info(f"OpenAI call succeeded with model='{model}' in {elapsed}s")
                     return result
 
             except Exception as exc:
                 last_error = exc
                 err_msg = str(exc)
-                print(f"[FAILOVER] Provider '{provider.upper()}' ({model}) failed -> {err_msg[:100]}... Switching to next!")
-                logger.warning(
-                    f"Provider '{provider}' with model '{model}' failed: {err_msg}. Failing over to next model/provider..."
+                is_quota = bool(
+                    "429" in err_msg
+                    or "rate_limit" in err_msg.lower()
+                    or "insufficient_quota" in err_msg.lower()
+                    or "quota" in err_msg.lower()
                 )
-                time.sleep(0.1)
 
-    print(f"[FAILED] All providers failed for task: '{task_name}'\n")
+                wait_time = 2.0 * (attempt + 1)
+                retry_match = re.search(r"(?:retry in|retryDelay[^0-9]*)(\d+(?:\.\d+)?)", err_msg, re.IGNORECASE)
+                if retry_match:
+                    wait_time = float(retry_match.group(1)) + 1.0
+
+                if wait_time > 10.0 and has_fallback_available:
+                    print(f"[FAST FAILOVER] Model '{model}' rate-limited ({wait_time:.0f}s wait). Switching to '{models[idx + 1]}'...")
+                    break
+
+                print(f"[FAILOVER] Model '{model}' error -> {err_msg[:90]}... (waiting {wait_time}s)")
+                logger.warning(f"Model '{model}' failed: {err_msg}. Retrying / failing over...")
+                time.sleep(wait_time)
+
+    print(f"[FAILED] All OpenAI models failed for task: '{task_name}'\n")
     raise RuntimeError(
-        f"All configured AI providers failed for task '{task_name}'. Last error: {last_error}. "
-        "Please verify your API keys in your Profile settings."
+        f"All OpenAI models failed for task '{task_name}'. Last error: {last_error}. "
+        "Please check your OpenAI API key in Profile settings."
     )
 
 
-# Specialized Task Wrappers with calibrated provider priorities
+# Specialized Task Wrappers powered 100% by OpenAI
 
 def call_extraction(
     prompt: str,
@@ -172,12 +145,12 @@ def call_extraction(
     user_keys: dict[str, str] | None = None,
     task_name: str = "Question Extraction",
 ) -> str:
-    """Extraction priority: OpenRouter (free) -> Groq -> Gemini -> NVIDIA -> OpenAI"""
-    return call_llm_with_fallback(
+    """Extracts questions using OpenAI models."""
+    return call_openai_with_fallback(
         prompt=prompt,
         system_instruction=system_instruction,
         user_keys=user_keys,
-        provider_priority=["openrouter", "groq", "gemini", "nvidia", "openai"],
+        candidate_models=OPENAI_EXTRACTION_MODELS,
         temperature=0.1,
         task_name=task_name,
     )
@@ -189,12 +162,12 @@ def call_generation(
     user_keys: dict[str, str] | None = None,
     task_name: str = "RAG Answer Generation",
 ) -> str:
-    """RAG Generation priority: Groq -> Gemini -> OpenRouter -> NVIDIA -> OpenAI"""
-    return call_llm_with_fallback(
+    """Generates RAG academic answers using OpenAI models."""
+    return call_openai_with_fallback(
         prompt=prompt,
         system_instruction=system_instruction,
         user_keys=user_keys,
-        provider_priority=["groq", "gemini", "openrouter", "nvidia", "openai"],
+        candidate_models=OPENAI_GENERATION_MODELS,
         temperature=0.2,
         task_name=task_name,
     )
@@ -206,12 +179,12 @@ def call_review(
     user_keys: dict[str, str] | None = None,
     task_name: str = "Academic AI Review",
 ) -> str:
-    """Academic Review priority: OpenRouter -> NVIDIA -> Gemini -> Groq -> OpenAI"""
-    return call_llm_with_fallback(
+    """Performs academic grading and rubric review using OpenAI models."""
+    return call_openai_with_fallback(
         prompt=prompt,
         system_instruction=system_instruction,
         user_keys=user_keys,
-        provider_priority=["openrouter", "nvidia", "gemini", "groq", "openai"],
+        candidate_models=OPENAI_REVIEW_MODELS,
         temperature=0.15,
         task_name=task_name,
     )

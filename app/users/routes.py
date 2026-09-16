@@ -6,10 +6,6 @@ from app.db.database import get_db
 from app.db.models import User
 from app.users.schemas import (
     OpenAIKeyUpdate,
-    GeminiKeyUpdate,
-    GroqKeyUpdate,
-    OpenRouterKeyUpdate,
-    NvidiaKeyUpdate,
     TokenResponse,
     UserCreate,
     UserProfileResponse,
@@ -20,22 +16,10 @@ from app.users.schemas import (
 from app.users.service import (
     authenticate_user,
     create_user,
-    delete_user_gemini_key,
-    delete_user_nvidia_key,
     delete_user_openai_key,
-    delete_user_openrouter_key,
-    delete_user_groq_key,
     get_user,
-    get_user_openrouter_key,
-    get_user_gemini_key,
-    get_user_nvidia_key,
-    get_user_groq_key,
     register_user,
     to_profile_response,
-    update_user_gemini_key,
-    update_user_groq_key,
-    update_user_openrouter_key,
-    update_user_nvidia_key,
     update_user_openai_key,
 )
 
@@ -88,82 +72,6 @@ def delete_openai_key_endpoint(
     db: Session = Depends(get_db),
 ):
     user = delete_user_openai_key(db=db, user=current_user)
-    return to_profile_response(user)
-
-
-@router.put("/auth/profile/gemini-key", response_model=UserProfileResponse)
-def update_gemini_key_endpoint(
-    payload: GeminiKeyUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = update_user_gemini_key(db=db, user=current_user, gemini_key=payload.gemini_api_key)
-    return to_profile_response(user)
-
-
-@router.put("/auth/profile/groq-key", response_model=UserProfileResponse)
-def update_groq_key_endpoint(
-    payload: GroqKeyUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = update_user_groq_key(db=db, user=current_user, groq_key=payload.groq_api_key)
-    return to_profile_response(user)
-
-
-@router.put("/auth/profile/openrouter-key", response_model=UserProfileResponse)
-def update_openrouter_key_endpoint(
-    payload: OpenRouterKeyUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = update_user_openrouter_key(db=db, user=current_user, openrouter_key=payload.openrouter_api_key)
-    return to_profile_response(user)
-
-
-@router.put("/auth/profile/nvidia-key", response_model=UserProfileResponse)
-def update_nvidia_key_endpoint(
-    payload: NvidiaKeyUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = update_user_nvidia_key(db=db, user=current_user, nvidia_key=payload.nvidia_api_key)
-    return to_profile_response(user)
-
-
-@router.delete("/auth/profile/gemini-key", response_model=UserProfileResponse)
-def delete_gemini_key_endpoint(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = delete_user_gemini_key(db=db, user=current_user)
-    return to_profile_response(user)
-
-
-@router.delete("/auth/profile/groq-key", response_model=UserProfileResponse)
-def delete_groq_key_endpoint(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = delete_user_groq_key(db=db, user=current_user)
-    return to_profile_response(user)
-
-
-@router.delete("/auth/profile/openrouter-key", response_model=UserProfileResponse)
-def delete_openrouter_key_endpoint(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = delete_user_openrouter_key(db=db, user=current_user)
-    return to_profile_response(user)
-
-
-@router.delete("/auth/profile/nvidia-key", response_model=UserProfileResponse)
-def delete_nvidia_key_endpoint(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    user = delete_user_nvidia_key(db=db, user=current_user)
     return to_profile_response(user)
 
 

@@ -30,14 +30,8 @@ else:
     )
 
 
-def get_collection_name(provider: str) -> str:
-    if provider == "gemini":
-        return COLLECTION_NAME_GEMINI
-
-    if provider == "openai":
-        return COLLECTION_NAME_OPENAI
-
-    raise ValueError(f"Unsupported embedding provider: {provider}")
+def get_collection_name(provider: str = "openai") -> str:
+    return COLLECTION_NAME_OPENAI
 
 
 def get_qdrant_client() -> QdrantClient:
@@ -81,8 +75,8 @@ def delete_resource_vectors(resource_id: int) -> None:
     """Delete all Qdrant vectors belonging to one resource."""
 
     for collection_name in (
-        COLLECTION_NAME_GEMINI,
         COLLECTION_NAME_OPENAI,
+        COLLECTION_NAME_GEMINI,
     ):
         if not client.collection_exists(collection_name):
             continue

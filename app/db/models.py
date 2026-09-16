@@ -37,25 +37,6 @@ class User(Base):
         nullable=True,
     )
 
-    gemini_api_key_encrypted = Column(
-        String,
-        nullable=True,
-    )
-
-    groq_api_key_encrypted = Column(
-        String,
-        nullable=True,
-    )
-
-    openrouter_api_key_encrypted = Column(
-        String,
-        nullable=True,
-    )
-
-    nvidia_api_key_encrypted = Column(
-        String,
-        nullable=True,
-    )
 
     created_at = Column(
         DateTime,

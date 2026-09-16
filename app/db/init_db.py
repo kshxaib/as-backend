@@ -30,8 +30,12 @@ def init_db():
                     ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) DEFAULT '' NOT NULL;
                 END IF;
 
-                -- Make openai_api_key_encrypted nullable if it was NOT NULL
-                ALTER TABLE users ALTER COLUMN openai_api_key_encrypted DROP NOT NULL;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='users' AND column_name='openai_api_key_encrypted'
+                ) THEN
+                    ALTER TABLE users ADD COLUMN openai_api_key_encrypted VARCHAR;
+                END IF;
 
                 -- Check and add visibility column to answer_sets if missing
                 IF NOT EXISTS (
