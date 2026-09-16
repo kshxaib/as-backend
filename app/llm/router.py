@@ -110,12 +110,6 @@ def call_openai_with_fallback(
             except Exception as exc:
                 last_error = exc
                 err_msg = str(exc)
-                is_quota = bool(
-                    "429" in err_msg
-                    or "rate_limit" in err_msg.lower()
-                    or "insufficient_quota" in err_msg.lower()
-                    or "quota" in err_msg.lower()
-                )
 
                 wait_time = 2.0 * (attempt + 1)
                 retry_match = re.search(r"(?:retry in|retryDelay[^0-9]*)(\d+(?:\.\d+)?)", err_msg, re.IGNORECASE)
