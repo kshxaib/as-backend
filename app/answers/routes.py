@@ -6,6 +6,7 @@ from app.answers.service import format_answer_for_response, generate_answer_set,
 from app.db.database import get_db
 from app.db.models import AnswerSet, QuestionBank
 from app.pdf.generator import generate_solved_question_bank_pdf
+from app.pdf.cheatsheet_generator import generate_exam_cheatsheet_pdf
 
 router = APIRouter(
     prefix="/api",
@@ -97,6 +98,40 @@ def download_answer_set_pdf_endpoint(
     )
 
     safe_filename = f"AcademicStack_{subject.replace(' ', '_')}_{qb_name.replace(' ', '_')}_Solved.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+        },
+    )
+
+
+# Download compact 2-column formula & diagram cheatsheet PDF
+@router.get("/answer-sets/{answer_set_id}/cheatsheet-pdf")
+def download_cheatsheet_pdf_endpoint(
+    answer_set_id: int,
+    db: Session = Depends(get_db),
+):
+    answer_set = get_answer_set(db=db, answer_set_id=answer_set_id)
+    if not answer_set:
+        raise HTTPException(status_code=404, detail="Answer Set not found.")
+
+    qb = db.query(QuestionBank).filter(QuestionBank.id == answer_set.question_bank_id).first()
+    qb_name = qb.name if qb else "Question Bank"
+    subject = qb.subject if qb else "Academic Subject"
+
+    answers = get_answers_for_set(db=db, answer_set_id=answer_set.id)
+    formatted_answers = [format_answer_for_response(a) for a in answers]
+
+    pdf_bytes = generate_exam_cheatsheet_pdf(
+        question_bank_name=qb_name,
+        subject=subject,
+        answers=formatted_answers,
+    )
+
+    safe_filename = f"AcademicStack_{subject.replace(' ', '_')}_{qb_name.replace(' ', '_')}_Cheatsheet.pdf"
 
     return Response(
         content=pdf_bytes,

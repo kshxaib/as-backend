@@ -44,6 +44,7 @@ from reportlab.platypus import (
     Preformatted,
     KeepTogether,
     Image as RLImage,
+    PageBreak,
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -603,6 +604,28 @@ class _Styles:
             "Source", fontName=fonts.FONT_SANS, fontSize=8.5, leading=11.5,
             textColor=colors.HexColor(LINK),
         )
+        self.toc_title = ParagraphStyle(
+            "TOCTitle", fontName=fonts.FONT_SANS_BOLD, fontSize=11, leading=14,
+            textColor=colors.HexColor(ACCENT), spaceBefore=GAP_SM, spaceAfter=GAP_SM,
+            keepWithNext=True,
+        )
+        self.toc_num = ParagraphStyle(
+            "TOCNum", fontName=fonts.FONT_SANS_BOLD, fontSize=9.5, leading=14,
+            textColor=colors.HexColor(HEAD_DARK),
+        )
+        self.toc_text = ParagraphStyle(
+            "TOCText", fontName=fonts.FONT_SERIF, fontSize=9.5, leading=14,
+            textColor=colors.HexColor(INK),
+        )
+        self.toc_marks = ParagraphStyle(
+            "TOCMarks", fontName=fonts.FONT_SANS_BOLD, fontSize=9, leading=14,
+            textColor=colors.HexColor(ACCENT), alignment=2,
+        )
+        self.section_break = ParagraphStyle(
+            "SectionBreak", fontName=fonts.FONT_SANS_BOLD, fontSize=12, leading=16,
+            textColor=colors.HexColor(HEAD_DARK), spaceBefore=GAP_SM, spaceAfter=2,
+            keepWithNext=True,
+        )
 
 
 # ─── Main entry point ─────────────────────────────────────────────────────────
@@ -652,12 +675,14 @@ def generate_solved_question_bank_pdf(
         # 3. Stats strip
         total_q = len(answers)
         total_marks = sum(int(a.get("marks") or 0) for a in answers)
+        repeated_count = sum(1 for a in answers if a.get("repeat_count", 1) > 1)
         stats = [[
             Paragraph(f"<b>Total Questions:</b> {total_q}", st.subtitle),
             Paragraph(f"<b>Total Marks:</b> {total_marks}", st.subtitle),
+            Paragraph(f"<b>🔥 High-Yield:</b> {repeated_count}", st.subtitle),
             Paragraph(f"<b>Subject:</b> {_escape(subject)}", st.subtitle),
         ]]
-        stats_table = Table(stats, colWidths=[CONTENT_WIDTH / 3] * 3)
+        stats_table = Table(stats, colWidths=[CONTENT_WIDTH / 4] * 4)
         stats_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), CODE_BG),
             ("BOX", (0, 0), (-1, -1), 0.5, CODE_BORDER),
@@ -667,6 +692,54 @@ def generate_solved_question_bank_pdf(
         story.append(stats_table)
         story.append(Spacer(1, GAP_MD))
         story.append(HRFlowable(width="100%", thickness=1, color=TABLE_GRID, spaceAfter=GAP_MD))
+
+        # 4. Table of Contents / Question Index
+        story.append(Paragraph("TABLE OF CONTENTS • QUESTION INDEX", st.toc_title))
+        story.append(Spacer(1, GAP_SM))
+
+        toc_rows = []
+        for index, ans in enumerate(answers, start=1):
+            q_num = ans.get("question_number", index)
+            q_text = ans.get("question_text", "Untitled Question")
+            marks = ans.get("marks", 0)
+            repeat_count = ans.get("repeat_count", 1)
+
+            q_text_clean = _escape(str(q_text))
+            if repeat_count > 1:
+                q_text_clean += f' <font color="#e11d48"><b>[★ Repeated {repeat_count}x]</b></font>'
+
+            toc_rows.append([
+                Paragraph(f"<b>Q{q_num}.</b>", st.toc_num),
+                Paragraph(q_text_clean, st.toc_text),
+                Paragraph(f"[{marks} Marks]", st.toc_marks),
+            ])
+
+        toc_table = Table(
+            toc_rows,
+            colWidths=[36, CONTENT_WIDTH - 36 - 68, 68],
+        )
+        toc_table.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#f1f5f9")),
+            *[("BACKGROUND", (0, i), (-1, i), TABLE_ALT_BG) for i in range(1, len(toc_rows), 2)],
+        ]))
+        story.append(toc_table)
+        story.append(Spacer(1, GAP_LG))
+        story.append(HRFlowable(width="100%", thickness=1, color=TABLE_GRID, spaceAfter=GAP_LG))
+        story.append(PageBreak())
+
+        # 5. Section Header for Solutions
+        story.append(Paragraph("DETAILED GROUNDED SOLUTIONS", st.section_break))
+        story.append(Paragraph(
+            "Complete examination solutions with step-by-step conceptual breakdowns, definitions, diagrams, and formulas.",
+            st.subtitle,
+        ))
+        story.append(Spacer(1, GAP_MD))
+        story.append(HRFlowable(width="100%", thickness=1, color=ACCENT, spaceAfter=GAP_LG))
 
         # 4. Per-question sections
         for index, ans in enumerate(answers, start=1):
