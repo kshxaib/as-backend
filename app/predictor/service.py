@@ -1,5 +1,6 @@
 """
 Service for AI-powered multi-paper pattern analysis and authentic predicted question paper synthesis.
+Performs dynamic, zero-assumption blueprint extraction from uploaded past examination papers.
 """
 
 import json
@@ -13,66 +14,105 @@ from app.llm.router import call_openai_with_fallback, OPENAI_GENERATION_MODELS
 
 logger = logging.getLogger("academicstack.predictor")
 
-SYSTEM_PROMPT = """You are an elite academic professor, board curriculum designer, and chief examination paper setter for top universities.
-You are given past examination papers for an academic subject spanning multiple semesters, sessions, or academic years.
+SYSTEM_PROMPT = """You are an elite academic professor, university examination board chair, and senior question paper setter.
+You are given authentic past examination papers for an academic course spanning multiple examination sessions.
 
-Your objective is to perform a rigorous multi-year structural and conceptual trend analysis, then synthesize a BRAND NEW, 100% AUTHENTIC PREDICTED QUESTION PAPER matching that university's EXACT format, layout, and mark distribution.
+Your mission is twofold:
+1. Conduct a deep structural, question-by-question blueprint audit of the uploaded past examination papers.
+2. Synthesize a 100% AUTHENTIC PREDICTED QUESTION PAPER strictly mirroring the exact blueprint, question hierarchy, sub-problems, and mark allocation discovered in the uploaded papers.
 
-=== STEP 1: DEEP EXAM PATTERN RECONSTRUCTION ===
-Carefully examine all provided past papers to deduce:
-1. Overall Marks & Time Allowance (e.g., 70 Marks / 3 Hours, 80 Marks, or 100 Marks).
-2. Exact Section Division:
-   - Does it have SECTION A, SECTION B, SECTION C?
-   - Or Q.1 compulsory and answer any 3 out of Q.2-Q.6?
-   - What are the marks per question (e.g., 2 Marks, 5 Marks, 10 Marks, 14 Marks)?
-   - Are there sub-questions like 1(a), 1(b) or internal choices ("OR")?
-3. Standard Instructions given to students (e.g. "Answer all questions from Section A", "Assume suitable data").
+======================================================================
+CRITICAL PRINCIPLE: ZERO PREDEFINED OR HARDCODED TEMPLATES
+======================================================================
+THERE IS NO FIXED OR PREDEFINED QUESTION PAPER FORMAT!
+You MUST NOT assume:
+- Do NOT assume Q.1 always has 6 sub-questions (it could have 4, 5, 6, 7, etc. depending on the paper).
+- Do NOT assume Q.2 to Q.6 always have 2 sub-questions of 10 marks (some questions may have 2 sub-questions of 10M, some may have 3 sub-questions of 10M+5M+5M or 8M+6M+6M, some may have sub-parts like a(i) and a(ii), some may be short notes with 4 choices, etc.).
+- Do NOT invent artificial sections like "SECTION A / B / C" if the past papers do not use them.
 
-=== STEP 2: MULTI-YEAR TOPIC RECURRENCE & PREDICTION ===
-Analyze the topic cadence across the uploaded papers:
-1. Which core foundational concepts appear repeatedly across almost every paper? (Highest prediction weight).
-2. Which concepts are cyclical (appeared 2 years ago, due to reappear now)?
-3. What is the university's characteristic tone, problem style, and numerical-to-theory ratio?
+Instead, you must DISCOVER the authentic blueprint from the provided past papers through the following two-phase process:
 
-=== STEP 3: PREDICTED QUESTION PAPER SYNTHESIS ===
-Synthesize a brand new, highly realistic examination paper that mirrors the real exam:
-- Formulate high-probability questions matching that exact format.
-- DO NOT generate answers. Only synthesize the Question Paper!
-- Ensure marks per section and total maximum marks sum accurately to the university standard.
-- Assign an estimated prediction likelihood (e.g., "95%", "85%", "75%") based on recurrence trends.
+----------------------------------------------------------------------
+PHASE 1: DYNAMIC BLUEPRINT AUDIT (EXAMINE THE UPLOADED PAPERS)
+----------------------------------------------------------------------
+Inspect all uploaded papers and extract their exact anatomy:
+1. Overall Exam Metadata:
+   - What is the course/subject code and title?
+   - What is the exact Duration / Time Allowed (e.g. 03 Hours, 3 Hours, 2.5 Hours)?
+   - What is the exact Maximum Marks (e.g. 80, 70, 100, 60)?
+   - What are the exact candidate instructions/notes (e.g. "Question No. 1 is compulsory", "Attempt any three questions out of remaining five", "Assume suitable data", etc.)?
 
-=== OUTPUT FORMAT (STRICT JSON ONLY) ===
-Output ONLY a valid, parseable JSON object matching this schema (no markdown fences, no commentary):
+2. Question-by-Question Blueprint:
+   - How many main questions are there? (e.g. Q.1 to Q.6, or Q.1 to Q.5, or Part A/B).
+   - For EACH main question, examine its exact structure:
+     * Header & Instruction: e.g. "Q.1 Answer the following (Any four) — 05 marks each", or "Q.2 [20 Marks]", or "Q.6 Write short notes on any four".
+     * Total marks for this main question.
+     * Exact Sub-Questions:
+       - Count how many sub-questions are provided in the real paper.
+       - Note their labels (e.g. "a.", "b.", "c.", or "a.(i)", "a.(ii)", or "1.", "2.").
+       - Note their individual marks (e.g. 5, 10, 6, 8, 4).
+       - Note any nested sub-problems (e.g. a(i) [5M], a(ii) [5M]).
+
+----------------------------------------------------------------------
+PHASE 2: PREDICTED QUESTION PAPER SYNTHESIS
+----------------------------------------------------------------------
+Using the exact blueprint audited in Phase 1:
+1. Replicate the EXACT number of main questions observed in the papers.
+2. For every main question, replicate its EXACT number of sub-questions and mark distribution:
+   - If Q.1 in the papers gives 5 sub-questions (a to e), generate all 5 sub-questions. If it gives 6 (a to f), generate all 6 sub-questions.
+   - If Q.2 has 2 sub-questions (a [10], b [10]), generate 2 sub-questions.
+   - If Q.3 has 3 sub-questions (a [10], b [5], c [5]), generate all 3 sub-questions with those exact marks.
+   - If a question has sub-parts like a.(i) and a.(ii), represent them faithfully with their respective marks.
+   - If Q.6 is a short notes question with 5 options to answer any 4, generate all 5 options.
+3. Formulate high-probability questions matching the university's characteristic tone, style, and syllabus coverage based on past paper recurrence.
+4. DO NOT generate answers. Only synthesize the examination paper.
+
+======================================================================
+CRITICAL: THE "CHOICE QUESTIONS" MANDATORY POOL RULE
+======================================================================
+When a question instruction specifies a choice:
+- "Answer the following (Any four) — 05 marks each"
+  * In the uploaded past papers, Q.1 provides SIX sub-questions: a, b, c, d, e, f!
+  * DO NOT GENERATE ONLY 4 SUB-QUESTIONS! If you output only 4, the student has NO choice!
+  * You MUST generate ALL 6 sub-questions (a, b, c, d, e, f) in the "questions" array for Q.1!
+- "Attempt any three questions out of remaining five questions"
+  * Generate ALL remaining questions (e.g. Q.2, Q.3, Q.4, Q.5, Q.6) completely!
+- "Write short notes on any four"
+  * If the past paper provides 5 or 6 options, generate ALL 5 or 6 options!
+
+======================================================================
+OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO COMMENTARY)
+======================================================================
 {
   "exam_meta": {
-    "university_heading": "ACADEMICSTACK PREDICTED MODEL EXAMINATION",
-    "subject": "<Subject Name>",
-    "paper_title": "<Exam Title, e.g. Predicted Final Examination 2026>",
-    "time_allowed": "3 Hours",
-    "maximum_marks": 70,
+    "university_heading": "<e.g. UNIVERSITY OF MUMBAI • MODEL EXAMINATION or university name from paper>",
+    "subject": "<Subject Name from papers>",
+    "paper_title": "<Exam Title, e.g. BE SEM-VII Examination>",
+    "time_allowed": "<e.g. 03 Hours>",
+    "maximum_marks": <Integer, e.g. 80>,
     "general_instructions": [
-      "Answer all questions from Section A.",
-      "Figures to the right indicate full marks.",
-      "Assume suitable data wherever necessary."
+      "<Instruction 1 from paper>",
+      "<Instruction 2 from paper>",
+      "<Instruction 3 from paper>"
     ]
   },
   "pattern_insights": {
-    "detected_format": "Detailed note on detected format (e.g., 3-Section layout with 10M Section A and 60M Sections B & C)",
-    "recurring_topics": ["Topic 1", "Topic 2", "Topic 3"],
-    "analysis_summary": "Brief 2-sentence rationale of how the multi-year trends were used to forecast this paper."
+    "detected_format": "<Describe the exact blueprint discovered from the past papers: e.g. Q.1 has N sub-questions of X marks each; Q.2 to Q.6 question and mark breakdown; total marks and time allowance.>",
+    "recurring_topics": ["<Core Topic 1>", "<Core Topic 2>", "<Core Topic 3>", "<Core Topic 4>", "<Core Topic 5>"],
+    "analysis_summary": "<2-3 sentence analysis of syllabus coverage, question cadence, and high-yield concepts detected across papers.>"
   },
   "sections": [
     {
-      "section_name": "SECTION A",
-      "section_instruction": "Answer all questions. (5 × 2 = 10 Marks)",
-      "total_marks": 10,
+      "section_name": "<Main Question label, e.g. Q.1 or Q.1 Answer the following>",
+      "section_instruction": "<Instruction for this question, e.g. Answer any four (05 marks each) or [20 Marks]>",
+      "total_marks": <Total marks for this question, e.g. 20>,
       "questions": [
         {
-          "question_number": "1(a)",
-          "question_text": "State the difference between...",
-          "marks": 2,
-          "prediction_likelihood": "95%",
-          "source_trend": "Repeated across multiple sessions",
+          "question_number": "<Sub-question label matching paper, e.g. a. or a.(i) or 1(a)>",
+          "question_text": "<Predicted question text>",
+          "marks": <Integer marks for this sub-question, e.g. 5 or 10 or 6>,
+          "prediction_likelihood": "<e.g. 95% or 90% or 85%>",
+          "source_trend": "<e.g. Repeated across multiple sessions or Core recurring concept>",
           "is_or_choice": false
         }
       ]
@@ -110,7 +150,6 @@ def clean_json_response(raw_text: str) -> dict:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        # Fallback: attempt to find outermost braces
         match = re.search(r"\{[\s\S]*\}", text)
         if match:
             return json.loads(match.group(0))
@@ -124,13 +163,12 @@ def analyze_and_predict_paper(
     user_keys: dict[str, str] | None = None,
 ) -> dict:
     """
-    Analyzes multiple past papers and synthesizes a predicted question paper.
-    papers: list of {'session': str, 'filename': str, 'text': str}
+    Analyzes multiple past papers and dynamically extracts the authentic blueprint
+    without any predefined question counts or rigid assumptions.
     """
     if not papers:
         raise ValueError("At least one past examination paper is required for analysis.")
 
-    # Construct the prompt with all past paper transcripts
     prompt_sections = [
         f"TARGET SUBJECT: {subject}",
         f"TARGET PREDICTED TITLE: {title}",
@@ -143,7 +181,6 @@ def analyze_and_predict_paper(
         filename = p.get("filename", "Unknown File")
         raw_text = p.get("text", "").strip()
 
-        # Truncate each individual paper text if exceptionally long to prevent token overflow
         truncated_text = raw_text[:18000] if len(raw_text) > 18000 else raw_text
 
         prompt_sections.append(
@@ -153,10 +190,20 @@ def analyze_and_predict_paper(
         )
 
     prompt_sections.append(
-        "\n=================== INSTRUCTIONS FOR PREDICTION ===================\n"
-        "Carefully analyze all of the above past papers. Determine the exact university examination blueprint, "
-        "time limits, sections, sub-question numbering, and mark distribution. Then formulate the high-probability "
-        "Predicted Model Question Paper for this upcoming exam. Return STRICT JSON matching the specified schema."
+        "\n=================== CRITICAL BLUEPRINT REPLICATION INSTRUCTIONS ===================\n"
+        "1. NO PREDEFINED ASSUMPTIONS: Read the past papers above carefully. Do NOT assume any fixed number of questions or sub-questions! "
+        "Count the actual main questions and inspect how each question is subdivided in the uploaded papers.\n"
+        "2. ACCURATE SUB-QUESTION COUNTS & FULL CHOICE POOL (DO NOT STOP AT 4!):\n"
+        "- For Q.1: In the uploaded past paper, Q.1 lists 6 sub-questions (a, b, c, d, e, f) for students to choose 'Any four'. "
+        "You MUST generate ALL 6 sub-questions (a, b, c, d, e, f) with 5 marks each! DO NOT output only 4 questions! If you only output 4, there is no choice for the student.\n"
+        "- For Q.2, Q.3, Q.4, Q.5, Q.6: Generate ALL of them completely. Do not assume 2 sub-questions of 10 marks for everything. "
+        "If a question has 2 parts, generate 2 parts. If a question has 3 parts (e.g. 10M + 5M + 5M), generate 3 parts. "
+        "If a question has nested sub-items like a(i) and a(ii), generate them accurately. "
+        "If a short-notes question has 5 options to answer any 4, generate all 5 options.\n"
+        "- Generate the complete examination paper matching that exact blueprint.\n"
+        "3. EXAM METADATA: Match the exact Duration, Maximum Marks, and candidate notes from the uploaded papers.\n"
+        "4. ONLY QUESTIONS: Generate only the examination paper. Do not include answers.\n"
+        "Return STRICT JSON only matching the schema."
     )
 
     full_prompt = "\n".join(prompt_sections)
@@ -167,12 +214,11 @@ def analyze_and_predict_paper(
         user_keys=user_keys,
         candidate_models=OPENAI_GENERATION_MODELS,
         temperature=0.25,
-        task_name="Multi-Paper Pattern Synthesis",
+        task_name="Dynamic Exam Blueprint Synthesis",
     )
 
     parsed_paper = clean_json_response(raw_response)
     
-    # Ensure baseline structures exist
     if "exam_meta" not in parsed_paper:
         parsed_paper["exam_meta"] = {}
     parsed_paper["exam_meta"].setdefault("subject", subject)
@@ -187,15 +233,13 @@ def save_predicted_paper_as_question_bank(
     paper_data: dict,
 ) -> QuestionBank:
     """
-    Saves the predicted paper as a QuestionBank and creates Question rows,
-    enabling students to audit it or generate grounded solutions.
+    Saves the predicted paper as a QuestionBank and creates Question rows.
     """
     meta = paper_data.get("exam_meta", {})
     sections = paper_data.get("sections", [])
     subject = meta.get("subject", "Predicted Subject")
     title = meta.get("paper_title", "Predicted Examination Paper")
 
-    # Create QuestionBank record
     qb = QuestionBank(
         user_id=user_id,
         name=title,
@@ -214,7 +258,6 @@ def save_predicted_paper_as_question_bank(
     db.commit()
     db.refresh(qb)
 
-    # Flatten sections into individual question entries
     q_counter = 1
     for sec in sections:
         sec_name = sec.get("section_name", "Section")
@@ -227,8 +270,7 @@ def save_predicted_paper_as_question_bank(
             if not q_text:
                 continue
 
-            # Prefix with section name for editorial clarity
-            full_text = f"[{sec_name}] {q_num_label}: {q_text}"
+            full_text = f"[{sec_name} {q_num_label}] {q_text}"
             raw_marks = q.get("marks", 5)
             try:
                 marks_int = int(re.search(r"\d+", str(raw_marks)).group(0))

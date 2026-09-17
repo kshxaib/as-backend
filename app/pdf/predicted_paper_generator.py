@@ -63,7 +63,7 @@ class PredictedPaperNumberedCanvas(canvas.Canvas):
 
         # Running header (page 2 onwards)
         if self._pageNumber > 1:
-            self.drawString(54, 750, "AcademicStack • Predicted Examination Paper")
+            self.drawString(54, 750, "AcademicStack • Predicted Model Paper (Practice & Simulation Only)")
             self.setStrokeColor(colors.HexColor(BORDER_COLOR))
             self.setLineWidth(0.5)
             self.line(54, 744, 558, 744)
@@ -73,7 +73,7 @@ class PredictedPaperNumberedCanvas(canvas.Canvas):
         self.setLineWidth(0.5)
         self.line(54, 45, 558, 45)
         self.drawRightString(558, 32, f"Page {self._pageNumber} of {page_count}")
-        self.drawString(54, 32, "AcademicStack AI Multi-Year Model Exam Paper • Strictly for Preparation")
+        self.drawString(54, 32, "AcademicStack AI Model Paper • Strictly for Preparation • Not an Official Paper • No Questions Guaranteed")
         self.restoreState()
 
 
@@ -174,6 +174,22 @@ def generate_predicted_question_paper_pdf(paper_data: dict) -> bytes:
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(meta_table)
+    story.append(Spacer(1, 4))
+
+    disc_style = ParagraphStyle(
+        "DisclaimerNotice", fontName=fonts.FONT_SANS_BOLD, fontSize=7.5, leading=10,
+        textColor=colors.HexColor("#b45309"), alignment=1,
+    )
+    disc_box = Table([[
+        Paragraph("STRICTLY FOR PREPARATION & PRACTICE • NOT AN OFFICIAL EXAMINATION PAPER • QUESTIONS NOT GUARANTEED", disc_style)
+    ]], colWidths=[CONTENT_WIDTH])
+    disc_box.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#fcd34d")),
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7")),
+        ("PADDING", (0, 0), (-1, -1), 3),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(disc_box)
     story.append(Spacer(1, 6))
 
     # 3. General Instructions Box
@@ -194,16 +210,16 @@ def generate_predicted_question_paper_pdf(paper_data: dict) -> bytes:
     # 4. Sections & Questions
     for sec_idx, sec in enumerate(sections, 1):
         sec_name = sec.get("section_name", f"SECTION {chr(64 + sec_idx)}")
-        sec_inst = sec.get("section_instruction", "")
+        sec_inst = (sec.get("section_instruction") or "").strip()
         sec_total = sec.get("total_marks")
-        if sec_total and not sec_inst.endswith("Marks"):
-            sec_inst += f" [{sec_total} Marks]"
+        if sec_total and "mark" not in sec_inst.lower():
+            sec_inst = f"{sec_inst} [{sec_total} Marks]".strip()
 
         # Section Header Strip
         sec_header = Table([[
             Paragraph(_escape(sec_name), sec_title_style),
             Paragraph(_escape(sec_inst), sec_inst_style),
-        ]], colWidths=[CONTENT_WIDTH * 0.45, CONTENT_WIDTH * 0.55])
+        ]], colWidths=[CONTENT_WIDTH * 0.28, CONTENT_WIDTH * 0.72])
         sec_header.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
             ("PADDING", (0, 0), (-1, -1), 4),
@@ -230,7 +246,7 @@ def generate_predicted_question_paper_pdf(paper_data: dict) -> bytes:
             marks = q.get("marks", "")
             likelihood = q.get("prediction_likelihood", "")
             
-            q_text_p = f"{_escape(q_text)}"
+            q_text_p = f"{_escape(q_text).replace(chr(10), '<br/>')}"
             if likelihood:
                 q_text_p += f' <font color="#0f766e" size="7"><b>[{_escape(likelihood)} Probability]</b></font>'
 
