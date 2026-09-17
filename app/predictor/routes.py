@@ -5,7 +5,7 @@ FastAPI router for Multi-Paper Analysis & Predicted Question Paper Generation.
 import json
 import logging
 import secrets
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, Form, File, UploadFile, HTTPException, Response
 from sqlalchemy.orm import Session
 

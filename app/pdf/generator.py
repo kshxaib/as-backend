@@ -28,7 +28,6 @@ import io
 import json
 import logging
 import re
-import urllib.request
 from datetime import datetime
 
 from reportlab.lib.pagesizes import letter

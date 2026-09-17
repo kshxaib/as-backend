@@ -1,7 +1,6 @@
 import os
 import uuid
 import tempfile
-import requests
 import pymupdf as fitz
 import json
 

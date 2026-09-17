@@ -22,7 +22,6 @@ detected and composed from individually-rendered cells laid out in ReportLab
 tables with vector brace/bracket delimiters.
 """
 
-import io
 import os
 import re
 import shutil

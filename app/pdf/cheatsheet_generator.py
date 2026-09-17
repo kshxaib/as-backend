@@ -11,8 +11,6 @@ exam-hall rehearsal cheatsheet containing:
 import base64
 import io
 import re
-import urllib.request
-from datetime import datetime
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors

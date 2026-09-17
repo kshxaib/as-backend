@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -106,14 +106,32 @@ health_tracker = {
 def health_check():
     with _health_lock:
         health_tracker["hit_count"] += 1
-
         health_tracker["last_hit_at"] = datetime.now(IST).strftime(
             "%Y-%m-%d %I:%M:%S %p"
         )
 
+    # 1. Neon PostgreSQL Ping (Keeps Neon active & prevents suspension)
+    db_status = "connected"
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+
+    # 2. Qdrant Cloud Ping (Keeps cluster active & prevents 7-day inactivity pause)
+    try:
+        qdrant_ok = check_qdrant_connection()
+        qdrant_status = "connected" if qdrant_ok else "disconnected"
+    except Exception as e:
+        qdrant_status = f"disconnected: {str(e)}"
+
+    overall_status = "ok" if (db_status == "connected" and qdrant_status == "connected") else "degraded"
+
     return {
-        "status": "ok",
+        "status": overall_status,
         "service": os.getenv("APP_NAME", "AcademicStack"),
+        "database": db_status,
+        "qdrant": qdrant_status,
         "hit_count": health_tracker["hit_count"],
         "last_hit_at": health_tracker["last_hit_at"],
         "server_start_time": health_tracker["server_start_time"],
