@@ -176,6 +176,36 @@ def download_question_bank_pdf_endpoint(question_bank_id: int, db: Session = Dep
         raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
 
 
+# Download extracted questions as a clean PDF
+@router.get("/{question_bank_id}/questions-pdf")
+def download_questions_pdf_endpoint(question_bank_id: int, db: Session = Depends(get_db)):
+    from fastapi import Response
+    from app.pdf.questions_generator import generate_questions_pdf
+
+    qb = get_question_bank(db=db, question_bank_id=question_bank_id)
+    if qb is None:
+        raise HTTPException(status_code=404, detail="Question Bank not found.")
+
+    questions = get_questions(db=db, question_bank_id=question_bank_id)
+    if not questions:
+        raise HTTPException(status_code=404, detail="No questions found for this question bank.")
+
+    pdf_bytes = generate_questions_pdf(
+        question_bank_name=qb.name,
+        subject=qb.subject,
+        questions=[{"question_number": q.question_number, "question_text": q.question_text, "marks": q.marks, "repeat_count": q.repeat_count or 1} for q in questions],
+    )
+
+    safe_filename = f"Questions_{qb.name.replace(' ', '_')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+        },
+    )
+
+
 @router.patch("/{question_bank_id}/visibility", response_model=QuestionBankResponse)
 def update_question_bank_visibility_endpoint(
     question_bank_id: int,
