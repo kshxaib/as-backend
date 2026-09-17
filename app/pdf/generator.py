@@ -275,7 +275,8 @@ def tokenize_blocks(text: str) -> list[tuple]:
                 while j < n and lines[j].strip().startswith(">"):
                     buf.append(re.sub(r"^\s*>\s?", "", lines[j]))
                     j += 1
-                blocks.append(("quote", " ".join(s.strip() for s in buf if s.strip())))
+                clean_lines = [s.strip() for s in buf if s.strip()]
+                blocks.append(("quote", "\n".join(clean_lines)))
                 i = j
                 continue
 
@@ -516,8 +517,14 @@ def render_blocks(blocks: list[tuple], mr: MathRenderer, st) -> list:
 
 
 def _render_quote(text: str, mr: MathRenderer, st):
-    para = Paragraph(inline_markup(text, mr, color_hex=MUTED, size=st.quote.fontSize), st.quote)
-    box = Table([[para]], colWidths=[CONTENT_WIDTH])
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        lines = [text]
+    paras = [
+        Paragraph(inline_markup(ln, mr, color_hex=MUTED, size=st.quote.fontSize), st.quote)
+        for ln in lines
+    ]
+    box = Table([[p] for p in paras], colWidths=[CONTENT_WIDTH])
     box.setStyle(TableStyle([
         ("LINELEFT", (0, 0), (-1, -1), 2.5, colors.HexColor("#cbd5e1")),
         ("LEFTPADDING", (0, 0), (-1, -1), 10),

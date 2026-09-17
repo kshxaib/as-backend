@@ -104,34 +104,40 @@ Guidelines:
    You MUST present the core of the answer as a Markdown comparison table with a header row (e.g. `| Aspect | Concept A | Concept B |`) covering several distinct aspects. Do NOT use a comparison table for non-comparison questions.
 
    NEVER add these sections unless explicitly requested by the question:
-   - Summary / Summary Table
+   - Summary / Summary Table (aside from the required 2-Min Quick Recall block at top)
    - Conclusion
-   - Key Takeaways / Key Notes
    - Mark Allocation / Grading Rubric
    - Reviewer Notes
    - Question (do not restate the question)
    - Commentary about your own answer — NEVER add a sentence that describes, justifies, or evaluates the answer (e.g., "This answer is concise, uses plain English, and follows the 2-mark requirement with a brief introduction plus three bullet points."). Output ONLY the answer content itself.
 
-6. MARK-BASED ANSWER STRUCTURE:
+6. MARK-BASED ANSWER STRUCTURE & LENGTH SCALING (CRITICAL):
 
-   2 MARKS (SHORT BUT COMPLETE — over-answering here is the most common mistake):
-   - Start with a plain-English explanation of the concept in 1–2 short, simple sentences (not a single compressed, jargon-packed line).
-   - Then at most 2–3 short, clear points with standard keywords in bold (e.g., "**Keyword** – simple one-sentence explanation").
-   - One key formula or fact ONLY if the question needs it.
-   - Do NOT add `###` headings, an Example section, or a Formula section unless the question explicitly asks for one.
-   - Keep it short and to the point — clear enough for a student to understand and memorize, but never an essay.
+   EVERY answer (regardless of marks) MUST START with a 2-Min Quick Recall snippet block at the very top:
+   > **⚡ 2-Min Quick Recall (Exam-Hall TL;DR)**
+   > - **[Core Term / Formula]**: Crisp 1-sentence definition or formula.
+   > - **[Key Mechanism / Distinction]**: Crisp 1-sentence explanation of working or primary distinction.
+   > - **[High-Yield Exam Takeaway]**: 1-sentence critical exam point or pitfall to avoid.
 
-   5 MARKS:
-   - Simple definition or introduction.
-   - 4–6 clear points with standard keywords in bold + simple 1-line explanations, or 2–4 clean sub-sections with `### Heading`.
-   - Formula, diagram, or simple real-world example where applicable.
-   - Moderate depth — cover the topic clearly without unnecessary fluff or heavy jargon.
+   After the Quick Recall block, scale the core answer strictly to the marks:
 
-   10+ MARKS:
-   - Simple definition/introduction.
-   - Detailed breakdown into clear, logical subsections using standard syllabus terminology with simple explanations.
-   - Step-by-step process, formulas, derivations, or ASCII diagrams where applicable.
-   - Clear examples and practical applications.
+   2 MARKS (CRISP & CONCISE — ~60–100 words max, NEVER an essay):
+   - 1 plain-English definition sentence (not an over-compressed one-liner).
+   - Strictly 2 clear bullet points with bold keywords (e.g., "**Keyword** – 1 simple sentence").
+   - Strictly NO diagrams, NO subheadings (###), NO filler or padding.
+
+   5–7 MARKS (MODERATE DEPTH — ~200–300 words):
+   - Core explanation (2–3 sentences).
+   - 1 concise diagram (flowchart or Mermaid diagram) or structured flow where applicable.
+   - 4–6 clear bullet points with bold keywords and 1-line explanations.
+   - Clear, focused depth without padding.
+
+   10+ MARKS (COMPREHENSIVE DEPTH — ~450–600 words):
+   - In-depth introduction and concept foundation.
+   - MANDATORY clean Mermaid diagram (```mermaid ... ```) for architecture, workflow, protocol, or state transition.
+   - Detailed breakdown into clear, logical subsections with `### Heading`.
+   - Step-by-step mechanisms, formulas, or derivations.
+   - Pros & Cons (or Advantages & Limitations / Trade-offs) section.
    - Thorough coverage for full marks, keeping language readable and well-structured.
 
    Never pad an answer with complex filler words, and never write more than the marks justify. Answer length MUST be proportional to the marks. Prioritize standard syllabus terms, simple explanations, technical correctness, clarity, and mark-appropriate depth.
@@ -178,10 +184,16 @@ Evaluation Checklist:
    - Use `### Heading` subheadings for structure. Do NOT use bold-only headers.
    - Omit any heading or section that is not directly relevant to the question.
 
-5. Mark-Appropriate Depth (enforce length proportional to marks):
-   - 2 Marks: A short plain-English explanation (1–2 simple sentences, not an over-compressed one-liner) + at most 2–3 short, clear points with bold keywords. No `###` headings / Example / Formula sections unless the question asked for them. If the draft is bloated or essay-like, TRIM it; if it is an over-compressed jargon one-liner, expand it slightly into a clear, simple explanation.
-   - 5 Marks: Simple definition + 4–6 clear points with bold keywords and simple 1-line explanations + formula/example if relevant.
-   - 10+ Marks: Detailed explanation in clean subsections, formulas, step-by-step points, examples/diagrams, keeping language simple and scannable.
+5. Mark-Appropriate Depth & Length Scaling (CRITICAL):
+   - Ensure the answer starts with the 2-Min Quick Recall block:
+     > **⚡ 2-Min Quick Recall (Exam-Hall TL;DR)**
+     > - **[Core Term / Formula]**: Crisp 1-sentence definition.
+     > - **[Key Mechanism / Distinction]**: Crisp 1-sentence working or distinction.
+     > - **[High-Yield Exam Takeaway]**: 1-sentence critical exam point.
+     If the draft omitted this block, construct it from the core points.
+   - 2 Marks (~60–100 words max): 1 plain-English definition sentence + strictly 2 clear points with bold keywords. No `###` headings / diagrams / filler. If the draft is bloated or essay-like, aggressively TRIM it to 2 bullet points.
+   - 5–7 Marks (~200–300 words): Core explanation (2–3 sentences) + 1 diagram / flowchart + 4–6 clear points with bold keywords.
+   - 10+ Marks (~450–600 words): Detailed explanation in clean subsections (`### Heading`), MANDATORY valid Mermaid diagram, step-by-step points/derivations, and a Pros & Cons (or Advantages & Limitations / Trade-offs) section.
    - If the question asks to differentiate/compare, ensure the final answer KEEPS a Markdown comparison table. If the question asks for a diagram, ensure the final answer KEEPS the Mermaid diagram (fenced ```mermaid code block) intact, syntactically valid, and not truncated — never convert it to plain text or ASCII art, and never delete a required diagram.
 
 5b. Mermaid Diagram Validation:
@@ -245,34 +257,47 @@ _NUMERIC_RE = re.compile(
 
 def build_answer_directives(marks: int, question_text: str) -> str:
     """Build explicit, per-question directives so the model reliably respects
-    marks-proportional length and produces a comparison table / ASCII diagram
-    when the question actually demands one (the system instruction alone is too
-    easy to ignore)."""
+    marks-proportional length, includes the 2-Min Quick Recall block, and produces
+    a comparison table / Mermaid diagram when appropriate."""
     q = question_text or ""
     lines: list[str] = []
 
     lines.append(
         "Write in SIMPLE TERMS and SIMPLE ENGLISH while keeping the academic meaning strictly intact. "
-        "Explain the concept first in plain, everyday English (short, simple sentences), then give the key points/components "
-        "in a clear structured list with simple explanations and everyday examples. Keep standard technical terms but explain them simply, and do not pad."
+        "Keep standard technical keywords in bold but explain them in plain, student-friendly sentences. "
+        "Answer length MUST be strictly proportional to the marks — never pad with filler words."
+    )
+
+    lines.append(
+        "MANDATORY EXAM-HALL QUICK RECALL BLOCK: You MUST START your answer with this block at the very top. "
+        "List EVERY key term, component, method, or concept from the answer — do NOT limit to 3 points. "
+        "Each point must be a bold keyword/term followed by a crisp 1-sentence explanation (max 15 words). "
+        "Students standing outside the exam hall should be able to scan ALL key terms in 30 seconds.\n"
+        "> **⚡ 2-Min Quick Recall (Exam-Hall TL;DR)**\n"
+        "> - **[Term 1]** — crisp 1-sentence explanation (max 15 words).\n"
+        "> - **[Term 2]** — crisp 1-sentence explanation (max 15 words).\n"
+        "> - **[Term N]** — crisp 1-sentence explanation (max 15 words).\n"
+        "Cover ALL terms from the answer, not just 3. Keep each line ultra-short. Followed by the scaled core solution below."
     )
 
     if marks <= 2:
         lines.append(
-            f"This is a {marks}-mark question — keep it short but complete: first a 1–2 sentence plain-English "
-            "explanation of the concept (not an over-compressed one-liner), then at most 2–3 short, clear points "
-            "(a simple sentence each) with bold keywords. Do NOT add ### headings, an Example section, or a Formula "
-            "section unless the question explicitly asks. Keep it simple and easy to memorize, never an essay."
+            f"This is a {marks}-mark question — CRITICAL BREVITY (~60–100 words max): after the Quick Recall block, "
+            "provide 1 plain-English definition sentence, then strictly 2 concise bullet points with bold keywords "
+            "(e.g. '**Keyword** – simple 1-sentence explanation'). Do NOT add diagrams, subheadings (###), "
+            "Example sections, or Formula sections unless explicitly requested. Over-answering 2-mark questions wastes valuable exam time."
         )
-    elif marks <= 6:
+    elif marks <= 7:
         lines.append(
-            f"This is a {marks}-mark question — give moderate depth: a short definition plus 4–6 clear points "
-            "(or 2–4 small sub-sections). Do not pad with filler."
+            f"This is a {marks}-mark question — MODERATE DEPTH (~200–300 words): core explanation (2–3 sentences), "
+            "1 concise diagram / flow where helpful, and 4–6 clear bullet points with bold keywords and 1-line explanations."
         )
     else:
         lines.append(
-            f"This is a {marks}-mark question — give thorough, well-structured depth with clear subsections, "
-            "but keep language simple and never pad with filler."
+            f"This is a {marks}-mark question — COMPREHENSIVE DEPTH (~450–600 words): in-depth concept breakdown, "
+            "MANDATORY clean Mermaid diagram (```mermaid ... ```) illustrating architecture/flow/protocol, "
+            "detailed logical subsections with ### headings, step-by-step mechanism/derivation, and a "
+            "Pros & Cons (or Advantages & Limitations / Trade-offs) section."
         )
 
     if _COMPARE_RE.search(q):
