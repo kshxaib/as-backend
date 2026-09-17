@@ -182,3 +182,46 @@ def call_review(
         temperature=0.15,
         task_name=task_name,
     )
+
+
+def transcribe_image_with_vision(
+    image_bytes: bytes,
+    user_keys: dict[str, str] | None = None,
+    prompt: str = "Please read and transcribe all university exam question paper text visible on this page faithfully and accurately. Include headers, instructions, questions, and marks.",
+) -> str:
+    """
+    Transcribes an image (PNG/JPEG) of an examination paper page using OpenAI Vision.
+    Used as an automatic OCR fallback when digital PDF text extraction fails or contains unmapped font glyphs.
+    """
+    import base64
+    user_keys = user_keys or {}
+    openai_key = user_keys.get("openai")
+    if not openai_key:
+        return ""
+
+    client = OpenAI(api_key=openai_key, timeout=60.0)
+    b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+    for model in ["gpt-4o-mini", "gpt-4o"]:
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                        ],
+                    }
+                ],
+                max_tokens=1500,
+                temperature=0.0,
+            )
+            content = resp.choices[0].message.content
+            if content and content.strip():
+                return content.strip()
+        except Exception as e:
+            logger.warning(f"Vision transcription failed with model '{model}': {e}")
+
+    return ""

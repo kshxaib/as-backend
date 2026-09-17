@@ -4,7 +4,8 @@ from pydantic import BaseModel
 from datetime import datetime
 
 from app.db.database import get_db
-from app.db.models import Resource, AnswerSet, QuestionBank, User, Answer
+from app.db.models import Resource, AnswerSet, QuestionBank, User, Answer, SharedPredictedPaper
+import json
 from app.answers.service import format_answer_for_response
 
 
@@ -219,4 +220,94 @@ def get_community_answer_set_answers(answer_set_id: int, db: Session = Depends(g
         "completed_questions": ans_set.completed_questions,
         "created_at": ans_set.created_at,
         "answers": formatted,
+    }
+
+
+# ─── Predicted Papers in The Commons ──────────────────────────────────────────
+
+# Get all community-shared predicted papers
+@router.get("/predicted-papers")
+def get_community_predicted_papers(db: Session = Depends(get_db)):
+    papers = (
+        db.query(SharedPredictedPaper, User.name.label("user_name"))
+        .outerjoin(User, SharedPredictedPaper.user_id == User.id)
+        .filter(SharedPredictedPaper.visibility == "community")
+        .order_by(SharedPredictedPaper.created_at.desc())
+        .all()
+    )
+
+    items = []
+    for paper, user_name in papers:
+        # Parse exam_meta from paper_data for display info
+        try:
+            parsed = json.loads(paper.paper_data) if isinstance(paper.paper_data, str) else paper.paper_data
+            meta = parsed.get("exam_meta", {})
+        except Exception:
+            meta = {}
+
+        items.append({
+            "id": paper.id,
+            "share_token": paper.share_token,
+            "user_id": paper.user_id,
+            "creator_name": paper.creator_name or user_name or "Student Scholar",
+            "subject": paper.subject,
+            "title": paper.title,
+            "time_allowed": meta.get("time_allowed", ""),
+            "maximum_marks": meta.get("maximum_marks", ""),
+            "views": paper.views,
+            "visibility": paper.visibility,
+            "created_at": paper.created_at.isoformat() if paper.created_at else None,
+        })
+
+    return {"predicted_papers": items}
+
+
+# Get full predicted paper data for community viewer
+@router.get("/predicted-papers/{paper_id}")
+def get_community_predicted_paper(paper_id: int, db: Session = Depends(get_db)):
+    paper = db.query(SharedPredictedPaper).filter(SharedPredictedPaper.id == paper_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Predicted paper not found.")
+
+    if paper.visibility != "community":
+        raise HTTPException(status_code=403, detail="This predicted paper is not publicly shared.")
+
+    paper.views += 1
+    db.commit()
+
+    try:
+        parsed_data = json.loads(paper.paper_data) if isinstance(paper.paper_data, str) else paper.paper_data
+    except Exception:
+        parsed_data = {}
+
+    author = db.query(User).filter(User.id == paper.user_id).first() if paper.user_id else None
+
+    return {
+        "id": paper.id,
+        "share_token": paper.share_token,
+        "creator_name": paper.creator_name or (author.name if author else "Student Scholar"),
+        "subject": paper.subject,
+        "title": paper.title,
+        "views": paper.views,
+        "visibility": paper.visibility,
+        "created_at": paper.created_at.isoformat() if paper.created_at else None,
+        "paper_data": parsed_data,
+    }
+
+
+# Toggle share/unshare predicted paper to community
+@router.post("/predicted-papers/{paper_id}/toggle-share")
+def toggle_share_predicted_paper(paper_id: int, db: Session = Depends(get_db)):
+    paper = db.query(SharedPredictedPaper).filter(SharedPredictedPaper.id == paper_id).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Predicted paper not found.")
+
+    paper.visibility = "community" if paper.visibility != "community" else "private"
+    db.commit()
+    db.refresh(paper)
+
+    return {
+        "message": f"Predicted paper visibility set to {paper.visibility}",
+        "id": paper.id,
+        "visibility": paper.visibility,
     }

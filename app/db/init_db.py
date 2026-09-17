@@ -103,6 +103,14 @@ def init_db():
                 ) THEN
                     ALTER TABLE question_banks ADD COLUMN files_meta TEXT;
                 END IF;
+
+                -- SharedPredictedPapers: add visibility
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='shared_predicted_papers' AND column_name='visibility'
+                ) THEN
+                    ALTER TABLE shared_predicted_papers ADD COLUMN visibility VARCHAR(20) DEFAULT 'private' NOT NULL;
+                END IF;
             END $$;
         """))
         conn.commit()

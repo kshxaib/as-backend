@@ -122,21 +122,78 @@ OUTPUT FORMAT (STRICT JSON ONLY, NO MARKDOWN, NO COMMENTARY)
 """
 
 
-def extract_text_from_pdf_bytes(file_bytes: bytes, filename: str = "Paper.pdf") -> str:
-    """Extracts raw text from PDF bytes using PyMuPDF."""
+from app.llm.router import call_openai_with_fallback, OPENAI_GENERATION_MODELS, transcribe_image_with_vision
+
+
+def _is_readable_text(text: str) -> bool:
+    """Checks if extracted text is legible English content rather than empty or unmapped font glyphs."""
+    alnum_count = sum(1 for c in text if c.isalnum())
+    if alnum_count < 30:
+        return False
+    vowels = sum(1 for c in text.lower() if c in "aeiou")
+    if vowels < 8:
+        return False
+    return True
+
+
+def extract_text_from_pdf_bytes(
+    file_bytes: bytes,
+    filename: str = "Paper.pdf",
+    user_keys: dict[str, str] | None = None,
+) -> str:
+    """
+    Extracts raw text from PDF bytes using PyMuPDF.
+    Uses block-level extraction and filters out repetitive watermark strings (e.g. repeated stamps).
+    If a page has no readable text (e.g. scanned photocopy or unmapped font glyphs like QB 7),
+    it automatically falls back to OpenAI Vision to transcribe the page questions accurately.
+    """
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         pages = []
         for page_num in range(len(doc)):
             page = doc[page_num]
-            text = page.get_text("text").strip()
-            if text:
-                pages.append(f"--- Page {page_num + 1} ---\n{text}")
+            blocks = page.get_text("blocks")
+            clean_blocks = []
+            for b in blocks:
+                b_text = b[4].strip()
+                if not b_text:
+                    continue
+                # Clean repetitive watermark strings (e.g. A464X525YCFA464X525YCF repeated tokens)
+                lines = [l.strip() for l in b_text.splitlines() if l.strip()]
+                filtered = [l for l in lines if not re.search(r'([A-Za-z0-9]{3,15})\1{2,}', l)]
+                if filtered:
+                    clean_blocks.append("\n".join(filtered))
+
+            page_content = "\n\n".join(clean_blocks).strip()
+            
+            # Fallback to standard text extraction if block filtering was too aggressive
+            if not _is_readable_text(page_content):
+                raw_text = page.get_text("text").strip()
+                if _is_readable_text(raw_text):
+                    page_content = raw_text
+
+            # Vision OCR fallback if text is still unreadable (e.g. scanned or unmapped font glyphs)
+            if not _is_readable_text(page_content) and user_keys and user_keys.get("openai"):
+                try:
+                    logger.info(f"Page {page_num + 1} of {filename} has unreadable text encoding. Invoking Vision OCR fallback...")
+                    pix = page.get_pixmap(dpi=150)
+                    img_bytes = pix.tobytes("png")
+                    vision_text = transcribe_image_with_vision(image_bytes=img_bytes, user_keys=user_keys)
+                    if vision_text.strip():
+                        page_content = vision_text.strip()
+                        logger.info(f"Vision OCR successfully transcribed {len(page_content)} characters for page {page_num + 1}")
+                except Exception as ve:
+                    logger.warning(f"Vision OCR fallback failed for page {page_num + 1} of {filename}: {ve}")
+
+            if page_content.strip():
+                pages.append(f"--- Page {page_num + 1} ---\n{page_content}")
+
         doc.close()
         return "\n\n".join(pages)
     except Exception as e:
         logger.warning(f"Could not extract text from {filename}: {e}")
         return ""
+
 
 
 def clean_json_response(raw_text: str) -> dict:

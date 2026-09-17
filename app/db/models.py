@@ -413,3 +413,64 @@ class Answer(Base):
         nullable=False,
     )
 
+
+class SharedPredictedPaper(Base):
+    __tablename__ = "shared_predicted_papers"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    share_token = Column(
+        String(64),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    user_id = Column(
+        Integer,
+        nullable=True,
+        index=True,
+    )
+
+    creator_name = Column(
+        String(100),
+        nullable=False,
+        default="Student Scholar",
+    )
+
+    subject = Column(
+        String(100),
+        nullable=False,
+    )
+
+    title = Column(
+        String(200),
+        nullable=False,
+    )
+
+    paper_data = Column(
+        Text,
+        nullable=False,
+    )
+
+    views = Column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    visibility = Column(
+        String(20),
+        default="private",
+        nullable=False,
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
