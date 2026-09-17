@@ -22,6 +22,8 @@ class AnswerResponse(BaseModel):
     sources: Optional[list[dict]] = None
     status: str
     error_message: Optional[str] = None
+    repeat_count: int
+    years_appeared: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -37,6 +39,7 @@ class AnswerSetResponse(BaseModel):
     status: str
     total_questions: int
     completed_questions: int
+    visibility: str
     created_at: datetime
     updated_at: datetime
     answers: list[AnswerResponse] = []

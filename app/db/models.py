@@ -160,8 +160,11 @@ class QuestionBank(Base):
     cloudinary_public_id = Column(
         String,
         nullable=False,
-        unique=True,
-        index=True,
+    )
+
+    files_meta = Column(
+        Text,
+        nullable=True,
     )
 
     # Comma-separated resource IDs linked to this question bank.
@@ -175,6 +178,12 @@ class QuestionBank(Base):
         String(20),
         nullable=False,
         default="uploaded",
+    )
+
+    visibility = Column(
+        String(20),
+        nullable=False,
+        default="private",
     )
 
     created_at = Column(
@@ -230,6 +239,17 @@ class Question(Base):
         String(20),
         nullable=False,
         default="ai_estimated",
+    )
+
+    repeat_count = Column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    years_appeared = Column(
+        String,
+        nullable=True,
     )
 
     created_at = Column(
@@ -343,6 +363,17 @@ class Answer(Base):
     marks = Column(
         Integer,
         nullable=False,
+    )
+
+    repeat_count = Column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    years_appeared = Column(
+        String,
+        nullable=True,
     )
 
     # Generated Markdown answer

@@ -252,9 +252,9 @@ def build_answer_directives(marks: int, question_text: str) -> str:
     lines: list[str] = []
 
     lines.append(
-        "Write for easy understanding and memorization: explain the concept first in plain, everyday English "
-        "(short, simple sentences), then give the key points/components in a clear structured list with simple "
-        "explanations and everyday examples. Keep standard technical terms but explain them simply, and do not pad."
+        "Write in SIMPLE TERMS and SIMPLE ENGLISH while keeping the academic meaning strictly intact. "
+        "Explain the concept first in plain, everyday English (short, simple sentences), then give the key points/components "
+        "in a clear structured list with simple explanations and everyday examples. Keep standard technical terms but explain them simply, and do not pad."
     )
 
     if marks <= 2:

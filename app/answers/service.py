@@ -58,6 +58,8 @@ def generate_answer_set(db: Session, question_bank_id: int, user_id: int | None 
             question_text=q.question_text,
             marks=q.marks,
             status="pending",
+            repeat_count=q.repeat_count,
+            years_appeared=q.years_appeared,
         )
         db.add(ans)
         answer_records.append(ans)
@@ -139,6 +141,8 @@ def _clone_answer_set_as_private(db: Session, source: AnswerSet) -> AnswerSet:
                 content=src.content,
                 sources=src.sources,
                 status=src.status,
+                repeat_count=src.repeat_count,
+                years_appeared=src.years_appeared,
                 error_message=src.error_message,
             )
         )
@@ -251,6 +255,8 @@ def format_answer_for_response(ans: Answer) -> dict:
         "sources": sources_list,
         "status": ans.status,
         "error_message": ans.error_message,
+        "repeat_count": ans.repeat_count,
+        "years_appeared": ans.years_appeared,
         "created_at": ans.created_at,
         "updated_at": ans.updated_at,
     }

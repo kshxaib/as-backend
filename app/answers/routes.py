@@ -35,6 +35,7 @@ def generate_answer_set_endpoint(
             "status": answer_set.status,
             "total_questions": answer_set.total_questions,
             "completed_questions": answer_set.completed_questions,
+            "visibility": answer_set.visibility,
             "created_at": answer_set.created_at,
             "updated_at": answer_set.updated_at,
             "answers": formatted_answers,
@@ -65,6 +66,7 @@ def get_answer_set_endpoint(
         "status": answer_set.status,
         "total_questions": answer_set.total_questions,
         "completed_questions": answer_set.completed_questions,
+        "visibility": answer_set.visibility,
         "created_at": answer_set.created_at,
         "updated_at": answer_set.updated_at,
         "answers": formatted_answers,
@@ -162,3 +164,38 @@ def list_answer_sets_for_bank_endpoint(
         .all()
     )
     return {"answer_sets": answer_sets}
+
+
+@router.patch("/answer-sets/{answer_set_id}/visibility", response_model=AnswerSetResponse)
+def update_answer_set_visibility_endpoint(
+    answer_set_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    visibility = payload.get("visibility")
+    if visibility not in ["private", "community"]:
+        raise HTTPException(status_code=400, detail="Invalid visibility state.")
+    
+    answer_set = get_answer_set(db=db, answer_set_id=answer_set_id)
+    if not answer_set:
+        raise HTTPException(status_code=404, detail="Answer Set not found.")
+    
+    answer_set.visibility = visibility
+    db.commit()
+    db.refresh(answer_set)
+    
+    answers = get_answers_for_set(db=db, answer_set_id=answer_set.id)
+    formatted_answers = [format_answer_for_response(a) for a in answers]
+    
+    return {
+        "id": answer_set.id,
+        "question_bank_id": answer_set.question_bank_id,
+        "user_id": answer_set.user_id,
+        "status": answer_set.status,
+        "total_questions": answer_set.total_questions,
+        "completed_questions": answer_set.completed_questions,
+        "visibility": answer_set.visibility,
+        "created_at": answer_set.created_at,
+        "updated_at": answer_set.updated_at,
+        "answers": formatted_answers,
+    }

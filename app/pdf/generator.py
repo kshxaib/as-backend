@@ -666,6 +666,7 @@ def generate_solved_question_bank_pdf(
             q_num = ans.get("question_number", index)
             q_text = ans.get("question_text", "Untitled Question")
             marks = ans.get("marks", 0)
+            repeat_count = ans.get("repeat_count", 1)
             content = ans.get("content") or "*Answer not generated.*"
 
             raw_sources = ans.get("sources") or []
@@ -677,10 +678,14 @@ def generate_solved_question_bank_pdf(
             else:
                 sources_list = raw_sources
 
+            q_text_formatted = f"Q{q_num}. {inline_markup(str(q_text), mr, color_hex=HEAD_DARK, size=st.q_title.fontSize)}"
+            if repeat_count > 1:
+                q_text_formatted += f' <font color="#e11d48"><b>[★ Repeated {repeat_count}x]</b></font>'
+
             # Question header box
             q_box = Table(
                 [[
-                    Paragraph(f"Q{q_num}. {inline_markup(str(q_text), mr, color_hex=HEAD_DARK, size=st.q_title.fontSize)}", st.q_title),
+                    Paragraph(q_text_formatted, st.q_title),
                     Paragraph(f"[{marks} Marks]", st.q_marks),
                 ]],
                 colWidths=[CONTENT_WIDTH - 84, 84],

@@ -13,6 +13,8 @@ class QuestionBankResponse(BaseModel):
     cloudinary_url: str
     resource_ids: str
     status: str
+    visibility: str
+    files_meta: str | None = None
     created_at: datetime
 
     model_config = {
@@ -33,6 +35,8 @@ class QuestionResponse(BaseModel):
     question_text: str
     marks: int
     marks_source: str
+    repeat_count: int
+    years_appeared: str | None
     created_at: datetime
 
     model_config = {

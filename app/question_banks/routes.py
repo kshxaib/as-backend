@@ -20,21 +20,21 @@ def create_question_bank_endpoint(
     name: str = Form(...),
     subject: str = Form(...),
     resource_ids: str = Form(""),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
-
-    if not file.filename:
+    if not files:
         raise HTTPException(
             status_code=400,
-            detail="A file is required.",
+            detail="At least one file is required.",
         )
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF files are allowed.",
-        )
+    for file in files:
+        if not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only PDF files are allowed.",
+            )
 
     question_bank = create_question_bank(
         db=db,
@@ -42,7 +42,7 @@ def create_question_bank_endpoint(
         name=name,
         subject=subject,
         resource_ids=resource_ids,
-        file=file,
+        files=files,
     )
 
     return question_bank
@@ -176,3 +176,21 @@ def download_question_bank_pdf_endpoint(question_bank_id: int, db: Session = Dep
         raise HTTPException(status_code=500, detail=f"Failed to fetch document: {str(e)}")
 
 
+@router.patch("/{question_bank_id}/visibility", response_model=QuestionBankResponse)
+def update_question_bank_visibility_endpoint(
+    question_bank_id: int,
+    visibility: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if visibility not in ["private", "community"]:
+        raise HTTPException(status_code=400, detail="Invalid visibility state.")
+    
+    qb = get_question_bank(db=db, question_bank_id=question_bank_id)
+    if qb is None:
+        raise HTTPException(status_code=404, detail="Question Bank not found.")
+    
+    qb.visibility = visibility
+    db.commit()
+    db.refresh(qb)
+    
+    return qb
